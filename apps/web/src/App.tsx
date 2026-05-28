@@ -545,8 +545,14 @@ export function App() {
 
       <section className="hero">
         <div>
-          <h1>门窗量尺、算料、报价，一次做完</h1>
-          <p>手机现场记录尺寸，电脑回店生成型材切割、玻璃排版和客户报价单。</p>
+          <span className="hero-kicker">现场量尺工作台</span>
+          <h1>量窗、画图、算料、报价</h1>
+          <p>按客户订单记录窗型尺寸，自动生成型材采购、玻璃原片排版和报价单。</p>
+        </div>
+        <div className="hero-metrics">
+          <span><strong>{customers.length}</strong>客户</span>
+          <span><strong>{activeOrder?.windows.length ?? 0}</strong>窗型</span>
+          <span><strong>￥{activeOrder?.summary.quote.finalTotal.toFixed(0) ?? 0}</strong>报价</span>
         </div>
         <div className="hero-actions">
           <button onClick={addWindow}>
@@ -794,6 +800,9 @@ export function App() {
       </main>
 
       <section className="reports">
+        <ReportCard icon={<Scissors size={18} />} title="厂家采购建议" className="purchase-report">
+          <PurchasePlanner order={activeOrder} materials={materials} />
+        </ReportCard>
         <ReportCard icon={<Scissors size={18} />} title="型材切割方案" className="profile-report">
           {activeOrder?.summary.profileCutting.map((group) => (
             <div key={group.materialCode} className="report-block">
@@ -941,6 +950,95 @@ function ReportCard({ icon, title, children, className = "" }: { icon: ReactNode
       {children}
     </article>
   );
+}
+
+function PurchasePlanner({ order, materials }: { order: OrderDetail | null; materials: MaterialSettingsDto }) {
+  if (!order) return <small>暂无订单，创建客户和窗户后生成采购建议。</small>;
+  const profileRows = order.summary.profileCutting.flatMap((group) =>
+    group.purchaseSummary.map((item) => {
+      const bars = group.bars.filter((bar) => bar.stockLengthMm === item.stockLengthMm);
+      const boughtMm = item.stockLengthMm * item.count;
+      const usedMm = bars.reduce((sum, bar) => sum + bar.cuts.reduce((cutSum, cut) => cutSum + cut.lengthMm, 0), 0);
+      const kerfMm = bars.reduce((sum, bar) => sum + (bar.kerfTotalMm ?? 0), 0);
+      const wasteMm = Math.max(0, boughtMm - usedMm - kerfMm);
+      return {
+        key: `${group.materialCode}-${item.stockLengthMm}`,
+        materialCode: group.materialCode,
+        spec: `${item.stockLengthMm}mm`,
+        count: item.count,
+        boughtText: `${(boughtMm / 1000).toFixed(2)}米`,
+        usedText: `${(usedMm / 1000).toFixed(2)}米`,
+        wasteText: `${(wasteMm / 1000).toFixed(2)}米`,
+        costText: `￥${((boughtMm / 1000) * materials.profilePricePerMeter).toFixed(0)}`
+      };
+    })
+  );
+  const glassRows = order.summary.glassCutting.flatMap((group) => {
+    const summary = group.purchaseSummary?.length
+      ? group.purchaseSummary
+      : summarizeGlassPurchase(group.sheets);
+    return summary.map((item) => {
+      const sheets = group.sheets.filter((sheet) => sheet.sheetWidthMm === item.sheetWidthMm && sheet.sheetHeightMm === item.sheetHeightMm);
+      const usedSqm = sheets.reduce((sum, sheet) => sum + sheet.rows.flatMap((row) => row.pieces).reduce((pieceSum, piece) => pieceSum + (piece.widthMm * piece.heightMm) / 1_000_000, 0), 0);
+      const boughtSqm = item.areaSqm;
+      const wasteSqm = Math.max(0, boughtSqm - usedSqm);
+      return {
+        key: `${group.glassType}-${item.sheetWidthMm}-${item.sheetHeightMm}`,
+        glassType: group.glassType,
+        spec: `${item.sheetWidthMm}x${item.sheetHeightMm}mm`,
+        count: item.count,
+        boughtText: `${boughtSqm.toFixed(2)}㎡`,
+        usedText: `${usedSqm.toFixed(2)}㎡`,
+        wasteText: `${wasteSqm.toFixed(2)}㎡`,
+        costText: `￥${(boughtSqm * materials.glassPricePerSqm).toFixed(0)}`
+      };
+    });
+  });
+  const profileTotal = profileRows.reduce((sum, row) => sum + Number(row.costText.replace("￥", "")), 0);
+  const glassTotal = glassRows.reduce((sum, row) => sum + Number(row.costText.replace("￥", "")), 0);
+  return (
+    <div className="purchase-planner">
+      <div className="purchase-total">
+        <span>建议采购成本</span>
+        <strong>￥{(profileTotal + glassTotal).toFixed(0)}</strong>
+        <em>按当前材料单价估算，不含五金、人工、利润</em>
+      </div>
+      <div className="purchase-section">
+        <h3>型材采购</h3>
+        <div className="purchase-table">
+          <span>型号</span><span>厂家规格</span><span>数量</span><span>采购</span><span>实用</span><span>余料</span><span>估价</span>
+          {profileRows.map((row) => (
+            <Fragment key={row.key}>
+              <strong>{row.materialCode}</strong><span>{row.spec}</span><span>{row.count} 根</span><span>{row.boughtText}</span><span>{row.usedText}</span><span>{row.wasteText}</span><span>{row.costText}</span>
+            </Fragment>
+          ))}
+        </div>
+      </div>
+      <div className="purchase-section">
+        <h3>玻璃原片采购</h3>
+        <div className="purchase-table">
+          <span>玻璃</span><span>原片规格</span><span>数量</span><span>采购</span><span>实用</span><span>余料</span><span>估价</span>
+          {glassRows.map((row) => (
+            <Fragment key={row.key}>
+              <strong>{row.glassType}</strong><span>{row.spec}</span><span>{row.count} 张</span><span>{row.boughtText}</span><span>{row.usedText}</span><span>{row.wasteText}</span><span>{row.costText}</span>
+            </Fragment>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function summarizeGlassPurchase(sheets: OrderSummary["glassCutting"][number]["sheets"]) {
+  const map = new Map<string, { sheetWidthMm: number; sheetHeightMm: number; count: number; areaSqm: number }>();
+  for (const sheet of sheets) {
+    const key = `${sheet.sheetWidthMm}x${sheet.sheetHeightMm}`;
+    const current = map.get(key) ?? { sheetWidthMm: sheet.sheetWidthMm, sheetHeightMm: sheet.sheetHeightMm, count: 0, areaSqm: 0 };
+    current.count += 1;
+    current.areaSqm += (sheet.sheetWidthMm * sheet.sheetHeightMm) / 1_000_000;
+    map.set(key, current);
+  }
+  return [...map.values()];
 }
 
 function ProfileCutVisualizer({

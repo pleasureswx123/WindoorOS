@@ -363,6 +363,53 @@ export class StoreService implements OnModuleInit {
       row.alignment = { vertical: "middle" };
     });
 
+    const purchaseSheet = workbook.addWorksheet("厂家采购建议");
+    purchaseSheet.addRow(["类别", "型号/玻璃", "厂家规格", "数量", "采购量", "实用量", "余料", "估算金额"]);
+    for (const group of detail.summary.profileCutting) {
+      for (const item of group.purchaseSummary) {
+        const bars = group.bars.filter((bar) => bar.stockLengthMm === item.stockLengthMm);
+        const boughtMm = item.stockLengthMm * item.count;
+        const usedMm = bars.reduce((sum, bar) => sum + bar.cuts.reduce((cutSum, cut) => cutSum + cut.lengthMm, 0), 0);
+        const kerfMm = bars.reduce((sum, bar) => sum + (bar.kerfTotalMm ?? 0), 0);
+        const wasteMm = Math.max(0, boughtMm - usedMm - kerfMm);
+        purchaseSheet.addRow([
+          "型材",
+          group.materialCode,
+          `${item.stockLengthMm}mm`,
+          `${item.count}根`,
+          `${(boughtMm / 1000).toFixed(2)}米`,
+          `${(usedMm / 1000).toFixed(2)}米`,
+          `${(wasteMm / 1000).toFixed(2)}米`,
+          Math.round((boughtMm / 1000) * detail.summary.quote.profileCost / Math.max(detail.summary.quote.profileMeters, 1))
+        ]);
+      }
+    }
+    for (const group of detail.summary.glassCutting) {
+      for (const item of group.purchaseSummary) {
+        const sheets = group.sheets.filter((sheet) => sheet.sheetWidthMm === item.sheetWidthMm && sheet.sheetHeightMm === item.sheetHeightMm);
+        const usedSqm = sheets.reduce((sum, sheet) => sum + sheet.rows.flatMap((row) => row.pieces).reduce((pieceSum, piece) => pieceSum + (piece.widthMm * piece.heightMm) / 1_000_000, 0), 0);
+        const wasteSqm = Math.max(0, item.areaSqm - usedSqm);
+        purchaseSheet.addRow([
+          "玻璃",
+          group.glassType,
+          `${item.sheetWidthMm}x${item.sheetHeightMm}mm`,
+          `${item.count}张`,
+          `${item.areaSqm.toFixed(2)}㎡`,
+          `${usedSqm.toFixed(2)}㎡`,
+          `${wasteSqm.toFixed(2)}㎡`,
+          Math.round(item.areaSqm * detail.summary.quote.glassCost / Math.max(detail.summary.quote.glassAreaSqm, 1))
+        ]);
+      }
+    }
+    purchaseSheet.columns = [{ width: 10 }, { width: 20 }, { width: 18 }, { width: 10 }, { width: 12 }, { width: 12 }, { width: 12 }, { width: 12 }];
+    purchaseSheet.eachRow((row, rowNumber) => {
+      row.font = { name: "Microsoft YaHei", size: 11, bold: rowNumber === 1 };
+      row.alignment = { vertical: "middle", wrapText: true };
+      if (rowNumber === 1) {
+        row.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFEFF6FF" } };
+      }
+    });
+
     const cutsSheet = workbook.addWorksheet("型材切割");
     cutsSheet.addRow(["型材", "根号", "原料长度", "切割段", "锯缝", "余料"]);
     for (const group of detail.summary.profileCutting) {
@@ -864,6 +911,28 @@ export class StoreService implements OnModuleInit {
     const windows = detail.windows
       .map((item) => `<tr><td>${item.floor} ${item.name}</td><td>${item.widthMm} x ${item.heightMm}mm</td><td>${item.quantity}</td><td>${item.openType}</td></tr>`)
       .join("");
+    const profilePurchases = detail.summary.profileCutting
+      .flatMap((group) =>
+        group.purchaseSummary.map((item) => {
+          const bars = group.bars.filter((bar) => bar.stockLengthMm === item.stockLengthMm);
+          const boughtMm = item.stockLengthMm * item.count;
+          const usedMm = bars.reduce((sum, bar) => sum + bar.cuts.reduce((cutSum, cut) => cutSum + cut.lengthMm, 0), 0);
+          const kerfMm = bars.reduce((sum, bar) => sum + (bar.kerfTotalMm ?? 0), 0);
+          const wasteMm = Math.max(0, boughtMm - usedMm - kerfMm);
+          return `<tr><td>型材</td><td>${group.materialCode}</td><td>${item.stockLengthMm}mm</td><td>${item.count}根</td><td>${(boughtMm / 1000).toFixed(2)}米</td><td>${(usedMm / 1000).toFixed(2)}米</td><td>${(wasteMm / 1000).toFixed(2)}米</td></tr>`;
+        })
+      )
+      .join("");
+    const glassPurchases = detail.summary.glassCutting
+      .flatMap((group) =>
+        group.purchaseSummary.map((item) => {
+          const sheets = group.sheets.filter((sheet) => sheet.sheetWidthMm === item.sheetWidthMm && sheet.sheetHeightMm === item.sheetHeightMm);
+          const usedSqm = sheets.reduce((sum, sheet) => sum + sheet.rows.flatMap((row) => row.pieces).reduce((pieceSum, piece) => pieceSum + (piece.widthMm * piece.heightMm) / 1_000_000, 0), 0);
+          const wasteSqm = Math.max(0, item.areaSqm - usedSqm);
+          return `<tr><td>玻璃</td><td>${group.glassType}</td><td>${item.sheetWidthMm}x${item.sheetHeightMm}mm</td><td>${item.count}张</td><td>${item.areaSqm.toFixed(2)}㎡</td><td>${usedSqm.toFixed(2)}㎡</td><td>${wasteSqm.toFixed(2)}㎡</td></tr>`;
+        })
+      )
+      .join("");
     return `<!doctype html>
 <html lang="zh-CN">
 <head>
@@ -879,6 +948,8 @@ export class StoreService implements OnModuleInit {
   <h1>WindoorOS 门窗报价单</h1>
   <p>客户：${detail.customer?.name ?? "-"}　电话：${detail.customer?.phone ?? "-"}　地址：${detail.customer?.address ?? "-"}</p>
   <table><thead><tr><th>窗户</th><th>尺寸</th><th>数量</th><th>开启</th></tr></thead><tbody>${windows}</tbody></table>
+  <h2>厂家采购建议</h2>
+  <table><thead><tr><th>类别</th><th>型号/玻璃</th><th>厂家规格</th><th>数量</th><th>采购量</th><th>实用量</th><th>余料</th></tr></thead><tbody>${profilePurchases}${glassPurchases}</tbody></table>
   <table>
     <tr><td>型材</td><td>${quote.profileMeters.toFixed(2)} 米</td><td>￥${quote.profileCost.toFixed(0)}</td></tr>
     <tr><td>玻璃</td><td>${quote.glassAreaSqm.toFixed(2)} ㎡</td><td>￥${quote.glassCost.toFixed(0)}</td></tr>

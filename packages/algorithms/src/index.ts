@@ -28,6 +28,7 @@ export type GlassCutResult = {
   glassType: string;
   sheets: GlassSheetPlan[];
   efficiency: number;
+  purchaseSummary: Array<{ sheetWidthMm: number; sheetHeightMm: number; count: number; areaSqm: number }>;
 };
 
 export type QuoteResult = {
@@ -167,11 +168,20 @@ export function optimizeGlassCuts(requirements: GlassRequirement[], settings: Pi
 
     const used = pieces.reduce((sum, piece) => sum + piece.widthMm * piece.heightMm, 0);
     const bought = sheets.reduce((sum, sheet) => sum + sheet.sheetWidthMm * sheet.sheetHeightMm, 0);
+    const purchaseMap = new Map<string, { sheetWidthMm: number; sheetHeightMm: number; count: number; areaSqm: number }>();
+    for (const sheet of sheets) {
+      const key = `${sheet.sheetWidthMm}x${sheet.sheetHeightMm}`;
+      const current = purchaseMap.get(key) ?? { sheetWidthMm: sheet.sheetWidthMm, sheetHeightMm: sheet.sheetHeightMm, count: 0, areaSqm: 0 };
+      current.count += 1;
+      current.areaSqm += (sheet.sheetWidthMm * sheet.sheetHeightMm) / 1_000_000;
+      purchaseMap.set(key, current);
+    }
 
     return {
       glassType,
       sheets,
-      efficiency: bought ? (used / bought) * 100 : 0
+      efficiency: bought ? (used / bought) * 100 : 0,
+      purchaseSummary: [...purchaseMap.values()]
     };
   });
 }

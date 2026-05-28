@@ -55,6 +55,7 @@ export type OrderSummary = {
   glassCutting: Array<{
     glassType: string;
     efficiency: number;
+    purchaseSummary?: Array<{ sheetWidthMm: number; sheetHeightMm: number; count: number; areaSqm: number }>;
     sheets: Array<{
       sheetWidthMm: number;
       sheetHeightMm: number;

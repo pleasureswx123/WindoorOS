@@ -14,6 +14,7 @@ describe("App", () => {
 
     render(<App />);
     expect(screen.getByText("WindoorOS")).toBeInTheDocument();
-    expect(screen.getByText("门窗量尺、算料、报价，一次做完")).toBeInTheDocument();
+    expect(screen.getByText("量窗、画图、算料、报价")).toBeInTheDocument();
+    expect(screen.getByText("厂家采购建议")).toBeInTheDocument();
   });
 });
