@@ -16,7 +16,7 @@ describe("cutting algorithms", () => {
   it("creates guillotine-style glass rows", () => {
     const result = optimizeGlassCuts(
       [{ glassType: "5+12A+5", widthMm: 800, heightMm: 600, quantity: 4 }],
-      { glassSheetWidthMm: 2440, glassSheetHeightMm: 1830 }
+      { glassSheetWidthMm: 2440, glassSheetHeightMm: 1830, glassSheetSpecs: [{ widthMm: 2440, heightMm: 1830 }] }
     );
 
     expect(result[0]?.sheets.length).toBeGreaterThan(0);

@@ -108,7 +108,7 @@ function sumBarUsed(bar: ProfileCutBar) {
   return bar.cuts.reduce((sum, cut) => sum + cut.lengthMm, 0) + bar.kerfTotalMm;
 }
 
-export function optimizeGlassCuts(requirements: GlassRequirement[], settings: Pick<MaterialSettings, "glassSheetWidthMm" | "glassSheetHeightMm">): GlassCutResult[] {
+export function optimizeGlassCuts(requirements: GlassRequirement[], settings: Pick<MaterialSettings, "glassSheetWidthMm" | "glassSheetHeightMm" | "glassSheetSpecs">): GlassCutResult[] {
   const groups = new Map<string, GlassRequirement[]>();
   for (const req of requirements) {
     groups.set(req.glassType, [...(groups.get(req.glassType) ?? []), req]);
@@ -124,6 +124,7 @@ export function optimizeGlassCuts(requirements: GlassRequirement[], settings: Pi
         }))
       )
       .sort((a, b) => b.widthMm * b.heightMm - a.widthMm * a.heightMm);
+    const sheetSpecs = normalizeGlassSheetSpecs(settings);
     const sheets: GlassSheetPlan[] = [];
 
     for (const piece of pieces) {
@@ -131,7 +132,7 @@ export function optimizeGlassCuts(requirements: GlassRequirement[], settings: Pi
       for (const sheet of sheets) {
         for (const row of sheet.rows) {
           const usedWidth = row.pieces.reduce((sum, item) => sum + item.widthMm, 0);
-          if (piece.heightMm <= row.heightMm && usedWidth + piece.widthMm <= settings.glassSheetWidthMm) {
+          if (piece.heightMm <= row.heightMm && usedWidth + piece.widthMm <= sheet.sheetWidthMm) {
             row.pieces.push(piece);
             placed = true;
             break;
@@ -140,7 +141,7 @@ export function optimizeGlassCuts(requirements: GlassRequirement[], settings: Pi
         if (placed) break;
 
         const usedHeight = sheet.rows.reduce((sum, row) => sum + row.heightMm, 0);
-        if (usedHeight + piece.heightMm <= settings.glassSheetHeightMm && piece.widthMm <= settings.glassSheetWidthMm) {
+        if (usedHeight + piece.heightMm <= sheet.sheetHeightMm && piece.widthMm <= sheet.sheetWidthMm) {
           sheet.rows.push({ heightMm: piece.heightMm, pieces: [piece] });
           placed = true;
           break;
@@ -148,9 +149,10 @@ export function optimizeGlassCuts(requirements: GlassRequirement[], settings: Pi
       }
 
       if (!placed) {
+        const spec = chooseGlassSheetSpec(piece, sheetSpecs);
         sheets.push({
-          sheetWidthMm: settings.glassSheetWidthMm,
-          sheetHeightMm: settings.glassSheetHeightMm,
+          sheetWidthMm: spec.widthMm,
+          sheetHeightMm: spec.heightMm,
           rows: [{ heightMm: piece.heightMm, pieces: [piece] }],
           wasteAreaSqm: 0
         });
@@ -159,12 +161,12 @@ export function optimizeGlassCuts(requirements: GlassRequirement[], settings: Pi
 
     for (const sheet of sheets) {
       const usedArea = sheet.rows.flatMap((row) => row.pieces).reduce((sum, piece) => sum + (piece.widthMm * piece.heightMm) / 1_000_000, 0);
-      const sheetArea = (settings.glassSheetWidthMm * settings.glassSheetHeightMm) / 1_000_000;
+      const sheetArea = (sheet.sheetWidthMm * sheet.sheetHeightMm) / 1_000_000;
       sheet.wasteAreaSqm = Math.max(0, sheetArea - usedArea);
     }
 
     const used = pieces.reduce((sum, piece) => sum + piece.widthMm * piece.heightMm, 0);
-    const bought = sheets.length * settings.glassSheetWidthMm * settings.glassSheetHeightMm;
+    const bought = sheets.reduce((sum, sheet) => sum + sheet.sheetWidthMm * sheet.sheetHeightMm, 0);
 
     return {
       glassType,
@@ -172,6 +174,17 @@ export function optimizeGlassCuts(requirements: GlassRequirement[], settings: Pi
       efficiency: bought ? (used / bought) * 100 : 0
     };
   });
+}
+
+function normalizeGlassSheetSpecs(settings: Pick<MaterialSettings, "glassSheetWidthMm" | "glassSheetHeightMm" | "glassSheetSpecs">) {
+  const specs = settings.glassSheetSpecs?.length ? settings.glassSheetSpecs : [{ widthMm: settings.glassSheetWidthMm, heightMm: settings.glassSheetHeightMm }];
+  return specs
+    .filter((spec) => spec.widthMm > 0 && spec.heightMm > 0)
+    .sort((a, b) => a.widthMm * a.heightMm - b.widthMm * b.heightMm);
+}
+
+function chooseGlassSheetSpec(piece: { widthMm: number; heightMm: number }, specs: Array<{ widthMm: number; heightMm: number }>) {
+  return specs.find((spec) => piece.widthMm <= spec.widthMm && piece.heightMm <= spec.heightMm) ?? specs[specs.length - 1] ?? { widthMm: piece.widthMm, heightMm: piece.heightMm };
 }
 
 export function calculateQuote(takeoff: MaterialTakeoff, settings: MaterialSettings): QuoteResult {

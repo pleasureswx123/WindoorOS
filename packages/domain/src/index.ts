@@ -105,6 +105,7 @@ export type WindowUnit = {
 
 export type MaterialSettings = {
   stockLengthsMm: number[];
+  glassSheetSpecs: Array<{ widthMm: number; heightMm: number }>;
   kerfMm: number;
   profilePricePerMeter: number;
   glassSheetWidthMm: number;
@@ -145,6 +146,7 @@ export const defaultDimensionRules: DimensionRules = {
 
 export const defaultMaterialSettings: MaterialSettings = {
   stockLengthsMm: [2400, 3000, 6000],
+  glassSheetSpecs: [{ widthMm: 2440, heightMm: 1830 }],
   kerfMm: 3,
   profilePricePerMeter: 28,
   glassSheetWidthMm: 2440,

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type PointerEvent, type ReactNode } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState, type PointerEvent, type ReactNode } from "react";
 import { Download, FileText, LogIn, Plus, RotateCcw, Ruler, Save, Scissors, Search, Trash2, Undo2 } from "lucide-react";
 import {
   apiDelete,
@@ -121,6 +121,8 @@ export function App() {
   const freeModel = form.drawingModel;
   const selectedGlass = freeModel?.glassPanels.find((panel) => panel.id === selectedGlassId);
   const selectedMullion = freeModel?.mullions.find((mullion) => mullion.id === selectedMullionId);
+  const stockLengths = getStockLengths(materials);
+  const glassSheetSpecs = getGlassSheetSpecs(materials);
 
   async function login() {
     const result = await apiPost<{ token: string }>("/api/auth/login", { phone, code: "000000" });
@@ -185,15 +187,14 @@ export function App() {
 
   async function saveMaterials() {
     if (!materials) return;
-    const [a, b, c] = materials.stockLengthsMm;
+    const nextStockLengths = normalizeStockLengths(stockLengths);
     await apiPut("/api/materials/settings", {
-      stockLengthA: a ?? 2400,
-      stockLengthB: b ?? 3000,
-      stockLengthC: c ?? 6000,
+      stockLengthsMm: nextStockLengths,
+      glassSheetSpecs,
       kerfMm: materials.kerfMm,
       profilePricePerMeter: Math.round(materials.profilePricePerMeter),
-      glassSheetWidthMm: materials.glassSheetWidthMm,
-      glassSheetHeightMm: materials.glassSheetHeightMm,
+      glassSheetWidthMm: glassSheetSpecs[0]?.widthMm ?? materials.glassSheetWidthMm,
+      glassSheetHeightMm: glassSheetSpecs[0]?.heightMm ?? materials.glassSheetHeightMm,
       glassPricePerSqm: Math.round(materials.glassPricePerSqm),
       hardwarePricePerWindow: Math.round(materials.hardwarePricePerWindow),
       laborPricePerSqm: Math.round(materials.laborPricePerSqm),
@@ -201,6 +202,42 @@ export function App() {
     });
     if (activeOrder) setActiveOrder(await apiGet<OrderDetail>(`/api/orders/${activeOrder.id}`));
     setMessage("材料价格、原料规格和锯缝已保存。");
+  }
+
+  function updateStockLength(index: number, value: number) {
+    if (!materials) return;
+    const next = [...stockLengths];
+    next[index] = Math.round(value || 0);
+    setMaterials({ ...materials, stockLengthsMm: next });
+  }
+
+  function addStockLength() {
+    if (!materials) return;
+    const largest = Math.max(...stockLengths, 0);
+    setMaterials({ ...materials, stockLengthsMm: [...stockLengths, largest >= 6000 ? largest : 6000] });
+  }
+
+  function removeStockLength(index: number) {
+    if (!materials || stockLengths.length <= 1) return;
+    setMaterials({ ...materials, stockLengthsMm: stockLengths.filter((_, itemIndex) => itemIndex !== index) });
+  }
+
+  function updateGlassSheetSpec(index: number, field: "widthMm" | "heightMm", value: number) {
+    if (!materials) return;
+    const next = [...glassSheetSpecs];
+    next[index] = { ...next[index], [field]: Math.round(value || 0) };
+    setMaterials({ ...materials, glassSheetSpecs: next, glassSheetWidthMm: next[0]?.widthMm ?? materials.glassSheetWidthMm, glassSheetHeightMm: next[0]?.heightMm ?? materials.glassSheetHeightMm });
+  }
+
+  function addGlassSheetSpec() {
+    if (!materials) return;
+    setMaterials({ ...materials, glassSheetSpecs: [...glassSheetSpecs, { widthMm: 2440, heightMm: 1830 }] });
+  }
+
+  function removeGlassSheetSpec(index: number) {
+    if (!materials || glassSheetSpecs.length <= 1) return;
+    const next = glassSheetSpecs.filter((_, itemIndex) => itemIndex !== index);
+    setMaterials({ ...materials, glassSheetSpecs: next, glassSheetWidthMm: next[0]?.widthMm ?? materials.glassSheetWidthMm, glassSheetHeightMm: next[0]?.heightMm ?? materials.glassSheetHeightMm });
   }
 
   async function saveDimensionRules() {
@@ -672,27 +709,51 @@ export function App() {
           {materials && (
             <div className="materials-box">
               <div className="panel-title compact"><h2>材料设置</h2><span>真实影响报价</span></div>
+              <p className="hint-text">厂家型材原料长度，切割方案会按这些固定规格反推采购根数。</p>
+              <div className="stock-length-list">
+                {stockLengths.map((length, index) => (
+                  <div key={index} className="stock-length-row">
+                    <NumberField label={`型材规格${index + 1}`} value={length} onChange={(value) => updateStockLength(index, value)} />
+                    <button className="ghost icon-button" title="删除规格" onClick={() => removeStockLength(index)} disabled={stockLengths.length <= 1}>
+                      <Trash2 size={15} />
+                    </button>
+                  </div>
+                ))}
+                <button className="ghost full" onClick={addStockLength}><Plus size={15} />增加型材规格</button>
+              </div>
               <div className="grid2">
                 <NumberField label="锯缝" value={materials.kerfMm} onChange={(value) => setMaterials({ ...materials, kerfMm: value })} />
                 <NumberField label="型材元/米" value={materials.profilePricePerMeter} onChange={(value) => setMaterials({ ...materials, profilePricePerMeter: value })} />
-                <NumberField label="玻璃宽" value={materials.glassSheetWidthMm} onChange={(value) => setMaterials({ ...materials, glassSheetWidthMm: value })} />
-                <NumberField label="玻璃高" value={materials.glassSheetHeightMm} onChange={(value) => setMaterials({ ...materials, glassSheetHeightMm: value })} />
                 <NumberField label="玻璃元/㎡" value={materials.glassPricePerSqm} onChange={(value) => setMaterials({ ...materials, glassPricePerSqm: value })} />
                 <NumberField label="利润率%" value={materials.profitRate} onChange={(value) => setMaterials({ ...materials, profitRate: value })} />
+              </div>
+              <p className="hint-text">玻璃厂家原片规格，排版会优先选择能放下且余料更少的规格。</p>
+              <div className="glass-sheet-spec-list">
+                {glassSheetSpecs.map((spec, index) => (
+                  <div key={index} className="glass-sheet-spec-row">
+                    <NumberField label={`原片${index + 1}宽`} value={spec.widthMm} onChange={(value) => updateGlassSheetSpec(index, "widthMm", value)} />
+                    <NumberField label={`原片${index + 1}高`} value={spec.heightMm} onChange={(value) => updateGlassSheetSpec(index, "heightMm", value)} />
+                    <button className="ghost icon-button" title="删除玻璃规格" onClick={() => removeGlassSheetSpec(index)} disabled={glassSheetSpecs.length <= 1}>
+                      <Trash2 size={15} />
+                    </button>
+                  </div>
+                ))}
+                <button className="ghost full" onClick={addGlassSheetSpec}><Plus size={15} />增加玻璃原片规格</button>
               </div>
               <button className="ghost full" onClick={saveMaterials}>保存材料设置</button>
             </div>
           )}
           {dimensionRules && (
             <div className="materials-box">
-              <div className="panel-title compact"><h2>扣尺规则</h2><span>影响下料尺寸</span></div>
+              <div className="panel-title compact"><h2>下料扣减</h2><span>影响实际切割尺寸</span></div>
+              <p className="hint-text">扣尺就是量到的净尺寸不能直接下料，要扣掉框料搭接、胶缝、安装间隙等预留量。</p>
               <div className="grid2">
-                <NumberField label="框扣尺" value={dimensionRules.frameDeductionMm} onChange={(value) => setDimensionRules({ ...dimensionRules, frameDeductionMm: value })} />
-                <NumberField label="中梃扣尺" value={dimensionRules.mullionDeductionMm} onChange={(value) => setDimensionRules({ ...dimensionRules, mullionDeductionMm: value })} />
-                <NumberField label="玻璃扣尺" value={dimensionRules.glassDeductionMm} onChange={(value) => setDimensionRules({ ...dimensionRules, glassDeductionMm: value })} />
-                <NumberField label="扇料扣尺" value={dimensionRules.sashDeductionMm} onChange={(value) => setDimensionRules({ ...dimensionRules, sashDeductionMm: value })} />
+                <NumberField label="框料扣减" value={dimensionRules.frameDeductionMm} onChange={(value) => setDimensionRules({ ...dimensionRules, frameDeductionMm: value })} />
+                <NumberField label="中梃扣减" value={dimensionRules.mullionDeductionMm} onChange={(value) => setDimensionRules({ ...dimensionRules, mullionDeductionMm: value })} />
+                <NumberField label="玻璃扣减" value={dimensionRules.glassDeductionMm} onChange={(value) => setDimensionRules({ ...dimensionRules, glassDeductionMm: value })} />
+                <NumberField label="扇料扣减" value={dimensionRules.sashDeductionMm} onChange={(value) => setDimensionRules({ ...dimensionRules, sashDeductionMm: value })} />
               </div>
-              <button className="ghost full" onClick={saveDimensionRules}>保存扣尺规则</button>
+              <button className="ghost full" onClick={saveDimensionRules}>保存下料扣减</button>
             </div>
           )}
           <p className="message">{message}</p>
@@ -700,16 +761,15 @@ export function App() {
       </main>
 
       <section className="reports">
-        <ReportCard icon={<Scissors size={18} />} title="型材切割方案">
+        <ReportCard icon={<Scissors size={18} />} title="型材切割方案" className="profile-report">
           {activeOrder?.summary.profileCutting.map((group) => (
             <div key={group.materialCode} className="report-block">
               <strong>{group.materialCode} · 利用率 {group.efficiency.toFixed(1)}%</strong>
               <p>{group.purchaseSummary.map((item) => `${item.stockLengthMm}mm ${item.count} 根`).join("，")}</p>
-              <ProfileCutVisualizer bars={group.bars.slice(0, 6)} kerfMm={materials?.kerfMm ?? 3} />
-              {group.bars.slice(0, 6).map((bar, index) => (
+              <ProfileCutVisualizer bars={group.bars} kerfMm={materials?.kerfMm ?? 3} />
+              {group.bars.map((bar, index) => (
                 <small key={index}>第 {index + 1} 根 {bar.stockLengthMm}mm：{bar.cuts.map((cut) => `${cut.label}${cut.lengthMm}`).join(" + ")}，余 {Math.round(bar.wasteMm)}mm</small>
               ))}
-              {group.bars.length > 6 && <small>还有 {group.bars.length - 6} 根未展开，可在 Excel/PDF 下料单查看完整明细。</small>}
             </div>
           ))}
         </ReportCard>
@@ -719,7 +779,7 @@ export function App() {
               <strong>{group.glassType} · {group.sheets.length} 张 · 利用率 {group.efficiency.toFixed(1)}%</strong>
               {group.sheets.slice(0, 4).map((sheet, index) => (
                 <div key={index} className="glass-sheet">
-                  <small>第 {index + 1} 张：余面积 {sheet.wasteAreaSqm.toFixed(2)}㎡</small>
+                  <small>第 {index + 1} 张：原片 {sheet.sheetWidthMm}x{sheet.sheetHeightMm}mm · 余面积 {sheet.wasteAreaSqm.toFixed(2)}㎡</small>
                   <div className="glass-layout">
                     {sheet.rows.map((row, rowIndex) => (
                       <div key={rowIndex} className="glass-row" style={{ height: `${Math.max(22, row.heightMm / 20)}px` }}>
@@ -804,17 +864,52 @@ function Field({ label, value, onChange }: { label: string; value: string; onCha
 }
 
 function NumberField({ label, value, onChange }: { label: string; value: number; onChange: (value: number) => void }) {
+  const [draft, setDraft] = useState(String(value));
+  useEffect(() => {
+    setDraft(String(value));
+  }, [value]);
   return (
     <label>
       {label}
-      <input type="number" inputMode="numeric" value={value} onChange={(event) => onChange(Number(event.target.value))} />
+      <input
+        type="text"
+        inputMode="numeric"
+        value={draft}
+        onFocus={(event) => event.currentTarget.select()}
+        onChange={(event) => {
+          const next = event.target.value;
+          if (!/^\d*$/.test(next)) return;
+          setDraft(next);
+          if (next !== "") onChange(Number(next));
+        }}
+        onBlur={() => {
+          if (draft === "") setDraft(String(value));
+        }}
+      />
     </label>
   );
 }
 
-function ReportCard({ icon, title, children }: { icon: ReactNode; title: string; children: ReactNode }) {
+function getStockLengths(materials: MaterialSettingsDto | null) {
+  return materials?.stockLengthsMm?.length ? materials.stockLengthsMm : [2400, 3000, 6000];
+}
+
+function normalizeStockLengths(lengths: number[]) {
+  const safeLengths = lengths
+    .filter((length) => Number.isFinite(length))
+    .map((length) => Math.round(length))
+    .filter((length) => length >= 1000 && length <= 12000);
+  return [...new Set(safeLengths.length ? safeLengths : [2400, 3000, 6000])].sort((a, b) => a - b);
+}
+
+function getGlassSheetSpecs(materials: MaterialSettingsDto | null) {
+  const specs = materials?.glassSheetSpecs?.length ? materials.glassSheetSpecs : [{ widthMm: materials?.glassSheetWidthMm ?? 2440, heightMm: materials?.glassSheetHeightMm ?? 1830 }];
+  return specs.length ? specs : [{ widthMm: 2440, heightMm: 1830 }];
+}
+
+function ReportCard({ icon, title, children, className = "" }: { icon: ReactNode; title: string; children: ReactNode; className?: string }) {
   return (
-    <article className="panel report-card">
+    <article className={`panel report-card ${className}`}>
       <div className="panel-title">
         <h2>{icon}{title}</h2>
       </div>
@@ -831,6 +926,7 @@ function ProfileCutVisualizer({
   kerfMm: number;
 }) {
   if (!bars.length) return <small>暂无型材切割数据。</small>;
+  const maxStockLength = Math.max(...bars.map((bar) => bar.stockLengthMm));
   return (
     <div className="profile-cut-list">
       {bars.map((bar, index) => {
@@ -841,27 +937,32 @@ function ProfileCutVisualizer({
           <div key={`${bar.stockLengthMm}-${index}`} className="profile-cut-row">
             <div className="profile-cut-meta">
               <strong>第 {index + 1} 根</strong>
-              <span>{bar.stockLengthMm}mm · 余 {Math.round(waste)}mm</span>
+              <span>规格 {bar.stockLengthMm}mm · 切料 {cutTotal}mm · 锯缝 {Math.round(visibleKerf)}mm · 余料 {Math.round(waste)}mm</span>
             </div>
-            <div className="profile-cut-bar" aria-label={`第 ${index + 1} 根 ${bar.stockLengthMm}mm 型材切割图`}>
-              {bar.cuts.map((cut, cutIndex) => (
-                <span
-                  key={`${cut.label}-${cut.lengthMm}-${cutIndex}`}
-                  className={`profile-cut-segment ${profileCutClass(cut.label)}`}
-                  style={{ flexGrow: cut.lengthMm, flexBasis: 0 }}
-                  title={`${cut.label} ${cut.lengthMm}mm`}
-                >
-                  <b>{cut.label}</b>
-                  <em>{cut.lengthMm}</em>
-                </span>
-              ))}
-              {visibleKerf > 0 && (
-                <span
-                  className="profile-cut-kerf"
-                  style={{ flexGrow: visibleKerf, flexBasis: 0 }}
-                  title={`锯缝合计 ${visibleKerf}mm`}
-                />
-              )}
+            <div className="profile-cut-track" aria-label={`第 ${index + 1} 根 ${bar.stockLengthMm}mm 型材切割图`}>
+              <div className="profile-cut-bar" style={{ width: `${Math.max(12, (bar.stockLengthMm / maxStockLength) * 100)}%` }}>
+              {bar.cuts.map((cut, cutIndex) => {
+                const showKerfAfter = cutIndex < bar.cuts.length - 1 && kerfMm > 0;
+                return (
+                  <Fragment key={`${cut.label}-${cut.lengthMm}-${cutIndex}`}>
+                    <span
+                      className={`profile-cut-segment ${profileCutClass(cut.label)}`}
+                      style={{ flexGrow: cut.lengthMm, flexBasis: 0 }}
+                      title={`${cut.label} ${cut.lengthMm}mm`}
+                    >
+                      <b>{shortCutLabel(cut.label)}</b>
+                      <em>{cut.lengthMm}</em>
+                    </span>
+                    {showKerfAfter && (
+                      <span
+                        className="profile-cut-kerf"
+                        style={{ flexGrow: kerfMm, flexBasis: 0 }}
+                        title={`锯缝 ${kerfMm}mm`}
+                      />
+                    )}
+                  </Fragment>
+                );
+              })}
               {waste > 0 && (
                 <span
                   className="profile-cut-waste"
@@ -872,6 +973,7 @@ function ProfileCutVisualizer({
                   <em>{Math.round(waste)}</em>
                 </span>
               )}
+              </div>
             </div>
           </div>
         );
@@ -885,6 +987,10 @@ function ProfileCutVisualizer({
       </div>
     </div>
   );
+}
+
+function shortCutLabel(label: string) {
+  return label.replace("外框", "框").replace("横料", "横").replace("竖料", "竖").replace("中梃", "中梃");
 }
 
 function profileCutClass(label: string) {

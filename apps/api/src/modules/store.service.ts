@@ -358,15 +358,33 @@ export class StoreService implements OnModuleInit {
       ["合计", "", detail.summary.quote.finalTotal]
     ]);
     quoteSheet.columns = [{ width: 18 }, { width: 24 }, { width: 18 }, { width: 24 }];
+    quoteSheet.eachRow((row) => {
+      row.font = { name: "Microsoft YaHei", size: 11 };
+      row.alignment = { vertical: "middle" };
+    });
 
     const cutsSheet = workbook.addWorksheet("型材切割");
-    cutsSheet.addRow(["型材", "原料长度", "切割段", "余料"]);
+    cutsSheet.addRow(["型材", "根号", "原料长度", "切割段", "锯缝", "余料"]);
     for (const group of detail.summary.profileCutting) {
-      for (const bar of group.bars) {
-        cutsSheet.addRow([group.materialCode, bar.stockLengthMm, bar.cuts.map((cut) => `${cut.label}${cut.lengthMm}`).join(" + "), Math.round(bar.wasteMm)]);
-      }
+      group.bars.forEach((bar, index) => {
+        cutsSheet.addRow([
+          group.materialCode,
+          index + 1,
+          `${bar.stockLengthMm}mm`,
+          bar.cuts.map((cut) => `${cut.label} ${cut.lengthMm}mm`).join(" + "),
+          `${Math.round(bar.kerfTotalMm)}mm`,
+          `${Math.round(bar.wasteMm)}mm`
+        ]);
+      });
     }
-    cutsSheet.columns = [{ width: 20 }, { width: 14 }, { width: 70 }, { width: 12 }];
+    cutsSheet.columns = [{ width: 20 }, { width: 8 }, { width: 14 }, { width: 78 }, { width: 10 }, { width: 10 }];
+    cutsSheet.eachRow((row, rowNumber) => {
+      row.font = { name: "Microsoft YaHei", size: 11, bold: rowNumber === 1 };
+      row.alignment = { vertical: "middle", wrapText: true };
+      if (rowNumber === 1) {
+        row.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFEFF6FF" } };
+      }
+    });
 
     const glassSheet = workbook.addWorksheet("玻璃排版");
     glassSheet.addRow(["玻璃", "张号", "分条", "余面积"]);
@@ -376,6 +394,13 @@ export class StoreService implements OnModuleInit {
       });
     }
     glassSheet.columns = [{ width: 20 }, { width: 10 }, { width: 70 }, { width: 14 }];
+    glassSheet.eachRow((row, rowNumber) => {
+      row.font = { name: "Microsoft YaHei", size: 11, bold: rowNumber === 1 };
+      row.alignment = { vertical: "middle", wrapText: true };
+      if (rowNumber === 1) {
+        row.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFEFF6FF" } };
+      }
+    });
     await workbook.xlsx.writeFile(filePath);
 
     const task = await this.prisma.exportTask.create({
@@ -476,12 +501,21 @@ export class StoreService implements OnModuleInit {
   }
 
   async updateMaterialSettings(dto: MaterialSettingsDto) {
+    const stockLengthsMm = (dto.stockLengthsMm?.length ? dto.stockLengthsMm : [dto.stockLengthA, dto.stockLengthB, dto.stockLengthC])
+      .filter((length): length is number => typeof length === "number" && Number.isFinite(length))
+      .map((length) => Math.round(length))
+      .filter((length) => length >= 1000 && length <= 12000);
+    const glassSheetSpecs = (dto.glassSheetSpecs?.length ? dto.glassSheetSpecs : [{ widthMm: dto.glassSheetWidthMm, heightMm: dto.glassSheetHeightMm }])
+      .filter((spec) => typeof spec.widthMm === "number" && typeof spec.heightMm === "number")
+      .map((spec) => ({ widthMm: Math.round(spec.widthMm), heightMm: Math.round(spec.heightMm) }))
+      .filter((spec) => spec.widthMm >= 500 && spec.heightMm >= 500 && spec.widthMm <= 6000 && spec.heightMm <= 6000);
     const materialSettings: MaterialSettings = {
-      stockLengthsMm: [dto.stockLengthA, dto.stockLengthB, dto.stockLengthC].sort((a, b) => a - b),
+      stockLengthsMm: [...new Set(stockLengthsMm.length ? stockLengthsMm : defaultMaterialSettings.stockLengthsMm)].sort((a, b) => a - b),
+      glassSheetSpecs: glassSheetSpecs.length ? glassSheetSpecs : defaultMaterialSettings.glassSheetSpecs,
       kerfMm: dto.kerfMm,
       profilePricePerMeter: dto.profilePricePerMeter,
-      glassSheetWidthMm: dto.glassSheetWidthMm,
-      glassSheetHeightMm: dto.glassSheetHeightMm,
+      glassSheetWidthMm: (glassSheetSpecs[0] ?? defaultMaterialSettings.glassSheetSpecs[0]).widthMm,
+      glassSheetHeightMm: (glassSheetSpecs[0] ?? defaultMaterialSettings.glassSheetSpecs[0]).heightMm,
       glassPricePerSqm: dto.glassPricePerSqm,
       hardwarePricePerWindow: dto.hardwarePricePerWindow,
       laborPricePerSqm: dto.laborPricePerSqm,
@@ -836,7 +870,7 @@ export class StoreService implements OnModuleInit {
   <meta charset="utf-8">
   <title>${detail.customer?.name ?? "客户"} 报价单</title>
   <style>
-    body{font-family:Arial,"Microsoft YaHei",sans-serif;color:#1f2329;padding:32px;}
+    body{font-family:"Noto Sans CJK SC","Microsoft YaHei","PingFang SC",Arial,sans-serif;color:#1f2329;padding:32px;}
     h1{font-size:26px;} table{width:100%;border-collapse:collapse;margin-top:16px;}
     td,th{border:1px solid #dcdfe5;padding:10px;text-align:left;} .total{font-size:24px;color:#3370ff;font-weight:700;}
   </style>

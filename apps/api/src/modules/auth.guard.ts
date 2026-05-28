@@ -12,7 +12,7 @@ export class AuthGuard implements CanActivate {
   canActivate(context: ExecutionContext) {
     const request = context.switchToHttp().getRequest<Request>();
     const path = request.path;
-    if (request.method === "GET" && PUBLIC_GET_PREFIXES.some((prefix) => path.startsWith(prefix))) return true;
+    if ((request.method === "GET" || request.method === "HEAD") && PUBLIC_GET_PREFIXES.some((prefix) => path.startsWith(prefix))) return true;
     if (request.method === "POST" && PUBLIC_POST_PREFIXES.some((prefix) => path.startsWith(prefix))) return true;
 
     const header = request.headers.authorization;

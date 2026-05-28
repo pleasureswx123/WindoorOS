@@ -361,6 +361,32 @@ label {
   padding-top: 12px;
   border-top: 1px solid var(--line-soft);
 }
+.stock-length-list {
+  display: grid;
+  gap: 8px;
+}
+.stock-length-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 40px;
+  gap: 8px;
+  align-items: end;
+}
+.glass-sheet-spec-list {
+  display: grid;
+  gap: 8px;
+}
+.glass-sheet-spec-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 40px;
+  gap: 8px;
+  align-items: end;
+}
+.hint-text {
+  margin: 0;
+  color: var(--ink-mute);
+  font-size: 12px;
+  line-height: 1.55;
+}
 .panel-title.compact {
   margin-bottom: 0;
 }
@@ -382,6 +408,9 @@ label {
 .report-card {
   min-height: 230px;
 }
+.profile-report {
+  grid-column: span 2;
+}
 .report-block {
   display: grid;
   gap: 6px;
@@ -399,85 +428,100 @@ label {
 }
 .profile-cut-list {
   display: grid;
-  gap: 10px;
-  margin: 10px 0;
+  gap: 3px;
+  margin: 6px 0;
 }
 .profile-cut-row {
   display: grid;
-  gap: 6px;
+  gap: 3px;
+  padding: 4px 0 5px;
+  border-bottom: 1px solid var(--line-soft);
+  background: transparent;
 }
 .profile-cut-meta {
-  display: flex;
-  justify-content: space-between;
-  gap: 10px;
+  display: grid;
+  grid-template-columns: 58px minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
   color: var(--ink-mute);
-  font-size: 12px;
+  font-size: 11px;
+  line-height: 1.25;
 }
 .profile-cut-meta strong {
   color: var(--ink);
+  font-size: 11px;
+  white-space: nowrap;
+}
+.profile-cut-meta span {
+  color: var(--ink-mute);
+  text-align: right;
+}
+.profile-cut-track {
+  width: 100%;
+  padding-right: 2px;
+  background: linear-gradient(90deg, transparent 0, transparent 99%, #e5e7eb 99%);
 }
 .profile-cut-bar {
   display: flex;
-  width: 100%;
-  min-height: 38px;
+  min-height: 24px;
   overflow: hidden;
-  border: 1px solid #d0d8e2;
-  border-radius: 6px;
-  background: #f6f8fb;
+  border: 1px solid #ccd6e4;
+  border-radius: 4px;
+  background: repeating-linear-gradient(90deg, #f8fafc 0 23px, #eef2f7 23px 24px);
 }
 .profile-cut-segment,
 .profile-cut-waste {
   display: grid;
-  min-width: 22px;
+  min-width: 12px;
   align-content: center;
   justify-items: center;
-  gap: 1px;
-  padding: 4px 3px;
+  gap: 0;
+  padding: 1px 2px;
   border-right: 1px solid rgba(255, 255, 255, .72);
-  color: #fff;
+  color: #172033;
   line-height: 1.05;
 }
 .profile-cut-segment b,
 .profile-cut-waste b {
   max-width: 100%;
   overflow: hidden;
-  font-size: 10px;
+  font-size: 9px;
   font-weight: 700;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .profile-cut-segment em,
 .profile-cut-waste em {
-  font-size: 10px;
+  font-size: 8px;
   font-style: normal;
   opacity: .92;
 }
 .profile-cut-frame {
-  background: #3370ff;
+  background: #dbeafe;
 }
 .profile-cut-mullion {
-  background: #16a085;
+  background: #ccfbf1;
 }
 .profile-cut-sash {
-  background: #7c3aed;
+  background: #ede9fe;
 }
 .profile-cut-other {
-  background: #64748b;
+  background: #e2e8f0;
 }
 .profile-cut-kerf {
   min-width: 2px;
   background: repeating-linear-gradient(90deg, #111827 0 2px, #facc15 2px 4px);
 }
 .profile-cut-waste {
-  background: #d7dde7;
+  background: #e5e7eb;
   color: #475569;
 }
 .profile-cut-legend {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px 12px;
+  gap: 6px 10px;
   color: var(--ink-mute);
-  font-size: 12px;
+  font-size: 11px;
 }
 .profile-cut-legend span {
   display: inline-flex;
@@ -489,10 +533,10 @@ label {
   height: 8px;
   border-radius: 2px;
 }
-.legend-frame { background: #3370ff; }
-.legend-mullion { background: #16a085; }
-.legend-sash { background: #7c3aed; }
-.legend-waste { background: #d7dde7; }
+.legend-frame { background: #dbeafe; border: 1px solid #93c5fd; }
+.legend-mullion { background: #ccfbf1; border: 1px solid #5eead4; }
+.legend-sash { background: #ede9fe; border: 1px solid #c4b5fd; }
+.legend-waste { background: #e5e7eb; border: 1px solid #cbd5e1; }
 .legend-kerf { background: repeating-linear-gradient(90deg, #111827 0 2px, #facc15 2px 4px); }
 .glass-sheet {
   display: grid;
@@ -568,6 +612,9 @@ label {
 @media (max-width: 1180px) {
   .topbar, .workspace, .reports {
     grid-template-columns: 1fr;
+  }
+  .profile-report {
+    grid-column: auto;
   }
   .detail-strip {
     grid-template-columns: 1fr;

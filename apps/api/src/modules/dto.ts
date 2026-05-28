@@ -1,5 +1,18 @@
-import { ArrayMaxSize, IsArray, IsIn, IsInt, IsObject, IsOptional, IsString, Max, Min } from "class-validator";
+import { ArrayMaxSize, IsArray, IsIn, IsInt, IsObject, IsOptional, IsString, Max, Min, ValidateNested } from "class-validator";
+import { Type } from "class-transformer";
 import type { DrawingModel, OpenType } from "@windooros/domain";
+
+export class GlassSheetSpecDto {
+  @IsInt()
+  @Min(500)
+  @Max(6000)
+  widthMm!: number;
+
+  @IsInt()
+  @Min(500)
+  @Max(6000)
+  heightMm!: number;
+}
 
 export class LoginDto {
   @IsString()
@@ -186,20 +199,38 @@ export class UpdateWindowDto {
 }
 
 export class MaterialSettingsDto {
-  @IsInt()
-  @Min(1000)
-  @Max(12000)
-  stockLengthA!: number;
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(12)
+  @IsInt({ each: true })
+  @Min(1000, { each: true })
+  @Max(12000, { each: true })
+  stockLengthsMm?: number[];
 
+  @IsOptional()
   @IsInt()
   @Min(1000)
   @Max(12000)
-  stockLengthB!: number;
+  stockLengthA?: number;
 
+  @IsOptional()
   @IsInt()
   @Min(1000)
   @Max(12000)
-  stockLengthC!: number;
+  stockLengthB?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1000)
+  @Max(12000)
+  stockLengthC?: number;
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(12)
+  @ValidateNested({ each: true })
+  @Type(() => GlassSheetSpecDto)
+  glassSheetSpecs?: GlassSheetSpecDto[];
 
   @IsInt()
   @Min(0)

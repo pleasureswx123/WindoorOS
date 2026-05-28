@@ -56,6 +56,8 @@ export type OrderSummary = {
     glassType: string;
     efficiency: number;
     sheets: Array<{
+      sheetWidthMm: number;
+      sheetHeightMm: number;
       wasteAreaSqm: number;
       rows: Array<{ heightMm: number; pieces: Array<{ widthMm: number; heightMm: number }> }>;
     }>;
@@ -114,6 +116,7 @@ export async function apiDelete<T>(path: string): Promise<T> {
 
 export type MaterialSettingsDto = {
   stockLengthsMm: number[];
+  glassSheetSpecs?: Array<{ widthMm: number; heightMm: number }>;
   kerfMm: number;
   profilePricePerMeter: number;
   glassSheetWidthMm: number;

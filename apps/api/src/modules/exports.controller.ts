@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Header, Inject, Param, Post, Res } from "@nestjs/common";
+import { Body, Controller, Get, Inject, Param, Post, Res } from "@nestjs/common";
 import type { Response } from "express";
 import { StoreService } from "./store.service";
 
@@ -22,8 +22,16 @@ export class ExportsController {
   }
 
   @Get("files/:fileName")
-  @Header("Content-Type", "text/html; charset=utf-8")
   file(@Param("fileName") fileName: string, @Res() res: Response) {
+    if (fileName.endsWith(".pdf")) {
+      res.type("application/pdf");
+      res.setHeader("Content-Disposition", `inline; filename="${fileName}"`);
+    } else if (fileName.endsWith(".xlsx")) {
+      res.type("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+      res.setHeader("Content-Disposition", `attachment; filename="${fileName}"`);
+    } else {
+      res.type("text/html; charset=utf-8");
+    }
     return res.sendFile(this.store.getExportFilePath(fileName));
   }
 
