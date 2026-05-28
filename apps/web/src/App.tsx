@@ -1784,7 +1784,7 @@ function WindowCanvas({
               )}
               {showLabel && (
                 <text x={panelX + panelW / 2} y={panelY + panelH / 2 + 4} textAnchor="middle" fontSize="12" fontWeight="700" fill="#23545c" pointerEvents="none">
-                  {sash ? "窗扇 " : ""}{Math.round(panel.width)}x{Math.round(panel.height)}
+                  {sash ? "窗扇 " : ""}{Math.round(glassRect.width)}x{Math.round(glassRect.height)}
                 </text>
               )}
             </g>
