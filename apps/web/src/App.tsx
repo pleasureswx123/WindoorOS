@@ -304,7 +304,7 @@ export function App() {
 
   async function saveDimensionRules() {
     if (!dimensionRules) return;
-    await apiPut("/api/materials/dimension-rules", {
+    const nextRules = {
       frameFaceWidthMm: Math.round(dimensionRules.frameFaceWidthMm),
       mullionFaceWidthMm: Math.round(dimensionRules.mullionFaceWidthMm),
       sashFaceWidthMm: Math.round(dimensionRules.sashFaceWidthMm),
@@ -313,56 +313,84 @@ export function App() {
       glassDeductionMm: Math.round(dimensionRules.glassDeductionMm),
       glassInstallGapMm: Math.round(dimensionRules.glassInstallGapMm),
       sashDeductionMm: Math.round(dimensionRules.sashDeductionMm)
-    });
-    if (activeOrder) setActiveOrder(await apiGet<OrderDetail>(`/api/orders/${activeOrder.id}`));
-    setMessage("行业扣尺规则已保存，并已重算图纸、算料、切割和报价。");
+    };
+    setDimensionRules(nextRules);
+    try {
+      await apiPut("/api/materials/dimension-rules", nextRules);
+      if (activeOrder) setActiveOrder(await apiGet<OrderDetail>(`/api/orders/${activeOrder.id}`));
+      setMessage("型材系统配置已保存，并已重算图纸、算料、切割和报价。");
+    } catch {
+      setMessage("型材系统配置未能保存；请先登录，并确认后端服务正常。");
+    }
   }
 
   async function saveInventoryItem() {
-    await apiPost("/api/inventory", {
-      materialCode: inventoryForm.materialCode,
-      materialType: inventoryForm.materialType,
-      lengthMm: inventoryForm.lengthMm || undefined,
-      widthMm: inventoryForm.widthMm || undefined,
-      heightMm: inventoryForm.heightMm || undefined,
-      quantity: inventoryForm.quantity,
-      source: inventoryForm.source,
-      note: inventoryForm.note
-    });
-    setInventory(await apiGet<InventoryItemDto[]>("/api/inventory"));
-    setMessage("库存/余料已入库，可用于后续采购和切割决策。");
+    try {
+      await apiPost("/api/inventory", {
+        materialCode: inventoryForm.materialCode,
+        materialType: inventoryForm.materialType,
+        lengthMm: inventoryForm.lengthMm || undefined,
+        widthMm: inventoryForm.widthMm || undefined,
+        heightMm: inventoryForm.heightMm || undefined,
+        quantity: inventoryForm.quantity,
+        source: inventoryForm.source,
+        note: inventoryForm.note
+      });
+      setInventory(await apiGet<InventoryItemDto[]>("/api/inventory"));
+      setMessage("库存/余料已入库，可用于后续采购和切割决策。");
+    } catch {
+      setMessage("库存保存失败；请先登录，并确认后端服务正常。");
+    }
   }
 
   async function exportQuote() {
     if (!activeOrder) return;
-    const task = await apiPost<{ id: string; status: string; resultUrl: string }>("/api/exports/quote/pdf", { orderId: activeOrder.id });
-    window.open(task.resultUrl, "_blank");
-    setMessage(`报价导出完成：${task.resultUrl}`);
+    try {
+      const task = await apiPost<{ id: string; status: string; resultUrl?: string | null }>("/api/exports/quote/pdf", { orderId: activeOrder.id });
+      if (!task.resultUrl) throw new Error("missing resultUrl");
+      window.open(task.resultUrl, "_blank");
+      setMessage(`报价导出完成：${task.resultUrl}`);
+    } catch {
+      setMessage("PDF 报价导出失败；请先登录，并确认后端服务和 Playwright 可用。");
+    }
   }
 
   async function exportExcel() {
     if (!activeOrder) return;
-    const task = await apiPost<{ id: string; status: string; resultUrl: string }>("/api/exports/quote/excel", { orderId: activeOrder.id });
-    window.open(task.resultUrl, "_blank");
-    setMessage(`Excel 下料报价表已导出：${task.resultUrl}`);
+    try {
+      const task = await apiPost<{ id: string; status: string; resultUrl?: string | null }>("/api/exports/quote/excel", { orderId: activeOrder.id });
+      if (!task.resultUrl) throw new Error("missing resultUrl");
+      window.open(task.resultUrl, "_blank");
+      setMessage(`Excel 下料报价表已导出：${task.resultUrl}`);
+    } catch {
+      setMessage("Excel 下料报价表导出失败；请先登录，并确认后端服务正常。");
+    }
   }
 
   async function createProductionTask() {
     if (!activeOrder) return;
-    await apiPost("/api/production", {
-      orderId: activeOrder.id,
-      title: `${activeOrder.customer?.name ?? "客户"}门窗生产`,
-      status: "待备料",
-      priority: 1,
-      note: "从报价单生成"
-    });
-    setProduction(await apiGet<ProductionTaskDto[]>("/api/production"));
-    setMessage("生产任务已加入排单。");
+    try {
+      await apiPost("/api/production", {
+        orderId: activeOrder.id,
+        title: `${activeOrder.customer?.name ?? "客户"}门窗生产`,
+        status: "待备料",
+        priority: 1,
+        note: "从报价单生成"
+      });
+      setProduction(await apiGet<ProductionTaskDto[]>("/api/production"));
+      setMessage("生产任务已加入排单。");
+    } catch {
+      setMessage("生产排单创建失败；请先登录，并确认后端服务正常。");
+    }
   }
 
   async function updateProductionStatus(task: ProductionTaskDto, status: string) {
-    await apiPatch(`/api/production/${task.id}`, { status });
-    setProduction(await apiGet<ProductionTaskDto[]>("/api/production"));
+    try {
+      await apiPatch(`/api/production/${task.id}`, { status });
+      setProduction(await apiGet<ProductionTaskDto[]>("/api/production"));
+    } catch {
+      setMessage("生产状态更新失败；请先登录，并确认后端服务正常。");
+    }
   }
 
   function applyTemplate(template: WindowTemplateDto) {
@@ -892,6 +920,7 @@ export function App() {
           {activeOrder?.summary.profileCutting.map((group) => (
             <div key={group.materialCode} className="report-block">
               <strong>{group.materialCode} · 利用率 {group.efficiency.toFixed(1)}%</strong>
+              <small>{group.optimization?.status === "proven-optimal" ? "已证明最优" : "当前最佳方案"}：{group.optimization?.method ?? "按当前型材规格排版"}</small>
               <p>{group.purchaseSummary.map((item) => `${item.stockLengthMm}mm ${item.count} 根`).join("，")}</p>
               <ProfileCutVisualizer bars={group.bars} kerfMm={materials?.kerfMm ?? 3} />
               {group.bars.map((bar, index) => (
@@ -904,6 +933,10 @@ export function App() {
           {activeOrder?.summary.glassCutting.map((group) => (
             <div key={group.glassType} className="report-block">
               <strong>{group.glassType} · {group.sheets.length} 张 · 利用率 {group.efficiency.toFixed(1)}%</strong>
+              <small>
+                {group.optimization?.status === "proven-optimal" ? "已证明最优" : "当前最佳方案"}：
+                {group.optimization?.method ?? "按当前原片规格做一刀到底排版"}，展示真实片高和行内余料。
+              </small>
               {group.sheets.slice(0, 4).map((sheet, index) => (
                 <div key={index} className="glass-sheet">
                   <small>第 {index + 1} 张：原片 {sheet.sheetWidthMm}x{sheet.sheetHeightMm}mm · 余面积 {sheet.wasteAreaSqm.toFixed(2)}㎡</small>
@@ -1219,40 +1252,149 @@ function GlassSheetVisualizer({
 }: {
   sheet: OrderSummary["glassCutting"][number]["sheets"][number];
 }) {
-  const usedHeight = sheet.rows.reduce((sum, row) => sum + row.heightMm, 0);
-  const bottomWasteHeight = Math.max(0, sheet.sheetHeightMm - usedHeight);
-  const rowTracks = [
-    ...sheet.rows.map((row) => `minmax(0, ${row.heightMm}fr)`),
-    ...(bottomWasteHeight > 0 ? [`minmax(0, ${bottomWasteHeight}fr)`] : [])
-  ].join(" ");
+  const usedArea = sheet.rows.flatMap((row) => row.pieces).reduce((sum, piece) => sum + piece.widthMm * piece.heightMm, 0);
+  const sheetArea = sheet.sheetWidthMm * sheet.sheetHeightMm;
+  const utilization = sheetArea > 0 ? Math.round((usedArea / sheetArea) * 100) : 0;
+  const pad = 48;
+  const plotW = 560;
+  const plotH = Math.max(220, (plotW * sheet.sheetHeightMm) / sheet.sheetWidthMm);
+  const viewW = plotW + pad * 2;
+  const viewH = plotH + pad * 2 + 34;
+  const sx = plotW / sheet.sheetWidthMm;
+  const sy = plotH / sheet.sheetHeightMm;
+  const pieces: Array<{ rowIndex: number; pieceIndex: number; x: number; y: number; width: number; height: number; widthMm: number; heightMm: number }> = [];
+  const rowWastes: Array<{ rowIndex: number; x: number; y: number; width: number; height: number; widthMm: number; heightMm: number }> = [];
+  const pieceWastes: Array<{ rowIndex: number; pieceIndex: number; x: number; y: number; width: number; height: number; widthMm: number; heightMm: number }> = [];
+  let yMm = 0;
+  sheet.rows.forEach((row, rowIndex) => {
+    let xMm = 0;
+    row.pieces.forEach((piece, pieceIndex) => {
+      const pieceHeight = Math.min(piece.heightMm, row.heightMm);
+      pieces.push({
+        rowIndex,
+        pieceIndex,
+        x: pad + xMm * sx,
+        y: pad + yMm * sy,
+        width: piece.widthMm * sx,
+        height: pieceHeight * sy,
+        widthMm: piece.widthMm,
+        heightMm: piece.heightMm
+      });
+      const underWasteHeight = Math.max(0, row.heightMm - pieceHeight);
+      if (underWasteHeight > 0) {
+        pieceWastes.push({
+          rowIndex,
+          pieceIndex,
+          x: pad + xMm * sx,
+          y: pad + (yMm + pieceHeight) * sy,
+          width: piece.widthMm * sx,
+          height: underWasteHeight * sy,
+          widthMm: piece.widthMm,
+          heightMm: underWasteHeight
+        });
+      }
+      xMm += piece.widthMm;
+    });
+    const rightWasteWidth = Math.max(0, sheet.sheetWidthMm - xMm);
+    if (rightWasteWidth > 0) {
+      rowWastes.push({
+        rowIndex,
+        x: pad + xMm * sx,
+        y: pad + yMm * sy,
+        width: rightWasteWidth * sx,
+        height: row.heightMm * sy,
+        widthMm: rightWasteWidth,
+        heightMm: row.heightMm
+      });
+    }
+    yMm += row.heightMm;
+  });
+  const bottomWasteHeight = Math.max(0, sheet.sheetHeightMm - yMm);
+  const bottomWaste = bottomWasteHeight > 0
+    ? { x: pad, y: pad + yMm * sy, width: plotW, height: bottomWasteHeight * sy, widthMm: sheet.sheetWidthMm, heightMm: bottomWasteHeight }
+    : null;
+  const colors = ["glass-a", "glass-b", "glass-c", "glass-d", "glass-e"];
+
   return (
-    <div
-      className="glass-layout"
-      style={{
-        aspectRatio: `${sheet.sheetWidthMm} / ${sheet.sheetHeightMm}`,
-        gridTemplateRows: rowTracks
-      }}
-      aria-label={`玻璃原片 ${sheet.sheetWidthMm}x${sheet.sheetHeightMm}mm 排版图`}
-    >
-      {sheet.rows.map((row, rowIndex) => {
-        const usedWidth = row.pieces.reduce((sum, piece) => sum + piece.widthMm, 0);
-        const rightWasteWidth = Math.max(0, sheet.sheetWidthMm - usedWidth);
-        const columns = [
-          ...row.pieces.map((piece) => `minmax(0, ${piece.widthMm}fr)`),
-          ...(rightWasteWidth > 0 ? [`minmax(0, ${rightWasteWidth}fr)`] : [])
-        ].join(" ");
-        return (
-          <div key={rowIndex} className="glass-row" style={{ gridTemplateColumns: columns }}>
-            {row.pieces.map((piece, pieceIndex) => (
-              <span key={pieceIndex} title={`${piece.widthMm}x${piece.heightMm}mm`}>
-                {piece.widthMm}x{piece.heightMm}
-              </span>
-            ))}
-            {rightWasteWidth > 0 && <i title={`右侧余料 ${rightWasteWidth}x${row.heightMm}mm`} />}
-          </div>
-        );
-      })}
-      {bottomWasteHeight > 0 && <div className="glass-bottom-waste" title={`底部余料 ${sheet.sheetWidthMm}x${bottomWasteHeight}mm`} />}
+    <div className="glass-layout" aria-label={`玻璃原片 ${sheet.sheetWidthMm}x${sheet.sheetHeightMm}mm 排版图`}>
+      <div className="glass-layout-head">
+        <strong>{sheet.sheetWidthMm} x {sheet.sheetHeightMm}mm</strong>
+        <span>利用率 {utilization}% · 余料 {sheet.wasteAreaSqm.toFixed(2)}㎡</span>
+      </div>
+      <svg className="glass-layout-svg" viewBox={`0 0 ${viewW} ${viewH}`} role="img">
+        <defs>
+          <pattern id="glassWastePattern" width="16" height="16" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+            <rect width="16" height="16" fill="#f1f5f9" />
+            <rect width="5" height="16" fill="#dbe5ec" />
+          </pattern>
+          <linearGradient id="sheetGlassShine" x1="0" x2="1" y1="0" y2="1">
+            <stop offset="0" stopColor="#ffffff" stopOpacity=".82" />
+            <stop offset="1" stopColor="#8bd7e6" stopOpacity=".28" />
+          </linearGradient>
+        </defs>
+        <rect x={pad} y={pad} width={plotW} height={plotH} rx="6" className="glass-sheet-base" />
+        {rowWastes.map((waste) => (
+          <g key={`rw-${waste.rowIndex}`}>
+            <rect className="glass-waste" x={waste.x} y={waste.y} width={waste.width} height={waste.height} />
+            {waste.width > 58 && waste.height > 28 && (
+              <text className="glass-waste-label" x={waste.x + waste.width / 2} y={waste.y + waste.height / 2 + 4} textAnchor="middle">
+                余料 {Math.round(waste.widthMm)}x{Math.round(waste.heightMm)}
+              </text>
+            )}
+          </g>
+        ))}
+        {pieceWastes.map((waste) => (
+          <g key={`pw-${waste.rowIndex}-${waste.pieceIndex}`}>
+            <rect className="glass-waste glass-piece-waste" x={waste.x} y={waste.y} width={waste.width} height={waste.height} />
+            {waste.width > 52 && waste.height > 18 && (
+              <text className="glass-waste-label glass-piece-waste-label" x={waste.x + waste.width / 2} y={waste.y + waste.height / 2 + 4} textAnchor="middle">
+                余 {Math.round(waste.widthMm)}x{Math.round(waste.heightMm)}
+              </text>
+            )}
+          </g>
+        ))}
+        {bottomWaste && (
+          <g>
+            <rect className="glass-waste" x={bottomWaste.x} y={bottomWaste.y} width={bottomWaste.width} height={bottomWaste.height} />
+            {bottomWaste.height > 28 && (
+              <text className="glass-waste-label" x={bottomWaste.x + bottomWaste.width / 2} y={bottomWaste.y + bottomWaste.height / 2 + 4} textAnchor="middle">
+                底部余料 {Math.round(bottomWaste.widthMm)}x{Math.round(bottomWaste.heightMm)}
+              </text>
+            )}
+          </g>
+        )}
+        {pieces.map((piece) => {
+          const pieceLabel = `${piece.widthMm}x${piece.heightMm}`;
+          const showFullLabel = piece.width > 62 && piece.height > 38;
+          const showShortLabel = piece.width > 42 && piece.height > 24;
+          const pieceLabelFontSize = Math.max(9, Math.min(14, Math.floor((piece.width - 8) / (pieceLabel.length * 0.58))));
+          return (
+            <g key={`${piece.rowIndex}-${piece.pieceIndex}`} className={`glass-piece ${colors[(piece.rowIndex + piece.pieceIndex) % colors.length]}`}>
+              <rect x={piece.x} y={piece.y} width={piece.width} height={piece.height} rx="3" />
+              <rect x={piece.x + 4} y={piece.y + 4} width={Math.max(0, piece.width - 8)} height={Math.max(0, piece.height - 8)} rx="2" className="glass-piece-shine" />
+              {(showFullLabel || showShortLabel) && (
+                <text className="glass-piece-label" x={piece.x + piece.width / 2} y={piece.y + piece.height / 2 - (showFullLabel ? 3 : -4)} textAnchor="middle" style={{ fontSize: pieceLabelFontSize }}>
+                  {pieceLabel}
+                </text>
+              )}
+              {showFullLabel && (
+                <text className="glass-piece-sub" x={piece.x + piece.width / 2} y={piece.y + piece.height / 2 + 17} textAnchor="middle">
+                  第{piece.rowIndex + 1}排 / 第{piece.pieceIndex + 1}块
+                </text>
+              )}
+            </g>
+          );
+        })}
+        <rect x={pad} y={pad} width={plotW} height={plotH} rx="6" className="glass-sheet-outline" />
+        <line x1={pad} y1={pad - 18} x2={pad + plotW} y2={pad - 18} className="glass-dimension-line" />
+        <line x1={pad} y1={pad - 24} x2={pad} y2={pad - 12} className="glass-dimension-line" />
+        <line x1={pad + plotW} y1={pad - 24} x2={pad + plotW} y2={pad - 12} className="glass-dimension-line" />
+        <text className="glass-dimension-label" x={pad + plotW / 2} y={pad - 28} textAnchor="middle">{sheet.sheetWidthMm}mm</text>
+        <line x1={pad - 18} y1={pad} x2={pad - 18} y2={pad + plotH} className="glass-dimension-line" />
+        <line x1={pad - 24} y1={pad} x2={pad - 12} y2={pad} className="glass-dimension-line" />
+        <line x1={pad - 24} y1={pad + plotH} x2={pad - 12} y2={pad + plotH} className="glass-dimension-line" />
+        <text className="glass-dimension-label" x={pad - 32} y={pad + plotH / 2} textAnchor="middle" transform={`rotate(-90 ${pad - 32} ${pad + plotH / 2})`}>{sheet.sheetHeightMm}mm</text>
+      </svg>
     </div>
   );
 }
@@ -1650,6 +1792,34 @@ function OpeningMark({
   );
 }
 
+function ProfileFrame({
+  x,
+  y,
+  width,
+  height,
+  faceWidth,
+  fill,
+  className
+}: {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  faceWidth: number;
+  fill: string;
+  className?: string;
+}) {
+  const face = Math.max(1, Math.min(faceWidth, width / 2, height / 2));
+  return (
+    <g className={className} pointerEvents="none">
+      <rect x={x} y={y} width={width} height={face} fill={fill} />
+      <rect x={x} y={y + height - face} width={width} height={face} fill={fill} />
+      <rect x={x} y={y} width={face} height={height} fill={fill} />
+      <rect x={x + width - face} y={y} width={face} height={height} fill={fill} />
+    </g>
+  );
+}
+
 function WindowCanvas({
   windowUnit,
   draft,
@@ -1768,16 +1938,14 @@ function WindowCanvas({
               />
               {sash && (
                 <>
-                  <rect
+                  <ProfileFrame
                     className="sash-frame"
                     x={sashX}
                     y={sashY}
                     width={sashW}
                     height={sashH}
-                    fill="none"
-                    stroke={selectedGlassId === panel.id ? "#2563eb" : "#5f4533"}
-                    strokeWidth={sashProfile}
-                    pointerEvents="none"
+                    faceWidth={sashProfile}
+                    fill={selectedGlassId === panel.id ? "#2563eb" : "#5f4533"}
                   />
                   <OpeningMark x={panelX} y={panelY} width={panelW} height={panelH} type={sash.type} direction={sash.openDirection} />
                 </>
@@ -1868,7 +2036,7 @@ function WindowCanvas({
             <text x={x + w / 2} y={y + mm * scale + 5} textAnchor="middle" fontSize="11" fill="#fff">{Math.round(mm)}</text>
           </g>
         ))}
-      <rect x={x} y={y} width={w} height={h} fill="none" stroke="#5f4533" strokeWidth={frameProfile} />
+      <ProfileFrame x={x} y={y} width={w} height={h} faceWidth={frameProfile} fill="#5f4533" />
       <line x1={x} y1={y + h + 30} x2={x + w} y2={y + h + 30} stroke="#2b3038" strokeWidth="2" />
       <text x={x + w / 2} y={y + h + 54} textAnchor="middle" fontSize="16" fontWeight="700">{width}mm</text>
       <line x1={x - 34} y1={y} x2={x - 34} y2={y + h} stroke="#2b3038" strokeWidth="2" />

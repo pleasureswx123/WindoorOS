@@ -657,42 +657,96 @@ label {
   gap: 6px;
 }
 .glass-layout {
-  display: grid;
+  display: flex;
   width: 100%;
-  gap: 0;
-  padding: 6px;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
   border: 1px solid var(--line-soft);
   border-radius: 8px;
-  background: #f8fdff;
+  background: linear-gradient(180deg, #ffffff 0%, #f5fafc 100%);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .7);
 }
-.glass-row {
-  display: grid;
-  min-height: 0;
+.glass-layout-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--ink);
+  font-size: 12px;
 }
-.glass-row span,
-.glass-row i,
-.glass-bottom-waste {
-  display: grid;
-  min-width: 0;
-  min-height: 0;
-  place-items: center;
-  border: 1px solid #9fcbd3;
-  background: #dff6fa;
-  color: #23545c;
-  font-size: 10px;
-  font-style: normal;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.glass-layout-head span {
+  color: var(--ink-mute);
 }
-.glass-row i,
-.glass-bottom-waste {
-  border-color: #d7e2e7;
-  background: repeating-linear-gradient(135deg, #f1f5f9 0 6px, #e8eef4 6px 12px);
-  color: transparent;
+.glass-layout-svg {
+  display: block;
+  width: 100%;
+  min-height: 240px;
 }
-.glass-row + .glass-row {
-  border-top: 1px solid rgba(99, 132, 146, .2);
+.glass-sheet-base {
+  fill: #f8fafc;
+}
+.glass-sheet-outline {
+  fill: none;
+  stroke: #334155;
+  stroke-width: 2.5;
+}
+.glass-piece rect:first-child {
+  stroke-width: 2;
+}
+.glass-piece-shine {
+  fill: url(#sheetGlassShine);
+  stroke: rgba(255, 255, 255, .75);
+  stroke-width: 1;
+  pointer-events: none;
+}
+.glass-a rect:first-child { fill: #c9f4ee; stroke: #22a699; }
+.glass-b rect:first-child { fill: #d8ecff; stroke: #3b82f6; }
+.glass-c rect:first-child { fill: #fee9bb; stroke: #f59e0b; }
+.glass-d rect:first-child { fill: #e7ddff; stroke: #8b5cf6; }
+.glass-e rect:first-child { fill: #d9f99d; stroke: #65a30d; }
+.glass-piece-label {
+  fill: #0f172a;
+  font-size: 14px;
+  font-weight: 800;
+  paint-order: stroke;
+  stroke: rgba(255, 255, 255, .86);
+  stroke-width: 3px;
+}
+.glass-piece-sub {
+  fill: #475569;
+  font-size: 11px;
+  font-weight: 700;
+}
+.glass-waste {
+  fill: url(#glassWastePattern);
+  stroke: #94a3b8;
+  stroke-dasharray: 8 6;
+  stroke-width: 1.5;
+}
+.glass-waste-label {
+  fill: #64748b;
+  font-size: 13px;
+  font-weight: 800;
+  paint-order: stroke;
+  stroke: rgba(255, 255, 255, .82);
+  stroke-width: 3px;
+}
+.glass-piece-waste {
+  stroke-dasharray: 5 4;
+  opacity: .92;
+}
+.glass-piece-waste-label {
+  font-size: 11px;
+}
+.glass-dimension-line {
+  stroke: #475569;
+  stroke-width: 2;
+}
+.glass-dimension-label {
+  fill: #334155;
+  font-size: 15px;
+  font-weight: 800;
 }
 .mini-row,
 .task-row {

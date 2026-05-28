@@ -50,12 +50,14 @@ export type OrderSummary = {
   profileCutting: Array<{
     materialCode: string;
     efficiency: number;
+    optimization?: { status: "proven-optimal" | "best-effort"; method: string };
     purchaseSummary: Array<{ stockLengthMm: number; count: number }>;
     bars: Array<{ stockLengthMm: number; wasteMm: number; kerfTotalMm?: number; cuts: Array<{ lengthMm: number; label: string; materialCode?: string }> }>;
   }>;
   glassCutting: Array<{
     glassType: string;
     efficiency: number;
+    optimization?: { status: "proven-optimal" | "best-effort"; method: string };
     purchaseSummary?: Array<{ sheetWidthMm: number; sheetHeightMm: number; count: number; areaSqm: number }>;
     sheets: Array<{
       sheetWidthMm: number;
@@ -87,7 +89,7 @@ function authHeaders() {
 }
 
 export async function apiGet<T>(path: string): Promise<T> {
-  const response = await fetch(path);
+  const response = await fetch(path, { headers: authHeaders() });
   if (!response.ok) throw new Error(await response.text());
   return response.json() as Promise<T>;
 }
