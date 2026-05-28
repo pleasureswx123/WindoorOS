@@ -47,6 +47,26 @@ const defaultWindow: WindowForm = {
   drawingModel: undefined
 };
 
+const defaultMaterials: MaterialSettingsDto = {
+  stockLengthsMm: [2400, 3000, 6000],
+  glassSheetSpecs: [{ widthMm: 2440, heightMm: 1830 }],
+  kerfMm: 3,
+  profilePricePerMeter: 28,
+  glassSheetWidthMm: 2440,
+  glassSheetHeightMm: 1830,
+  glassPricePerSqm: 118,
+  hardwarePricePerWindow: 85,
+  laborPricePerSqm: 65,
+  profitRate: 18
+};
+
+const defaultDimensionRules: DimensionRulesDto = {
+  frameDeductionMm: 38,
+  mullionDeductionMm: 18,
+  glassDeductionMm: 12,
+  sashDeductionMm: 26
+};
+
 export function App() {
   const [customers, setCustomers] = useState<CustomerWithOrders[]>([]);
   const [activeOrder, setActiveOrder] = useState<OrderDetail | null>(null);
@@ -63,8 +83,8 @@ export function App() {
   const [drawingHistory, setDrawingHistory] = useState<WindowUnitDto["drawingModel"][]>([]);
   const freeDragBaselineRef = useRef<WindowUnitDto["drawingModel"] | null>(null);
   const freeDragHistoryPushedRef = useRef(false);
-  const [materials, setMaterials] = useState<MaterialSettingsDto | null>(null);
-  const [dimensionRules, setDimensionRules] = useState<DimensionRulesDto | null>(null);
+  const [materials, setMaterials] = useState<MaterialSettingsDto>(defaultMaterials);
+  const [dimensionRules, setDimensionRules] = useState<DimensionRulesDto>(defaultDimensionRules);
   const [templates, setTemplates] = useState<WindowTemplateDto[]>([]);
   const [inventory, setInventory] = useState<InventoryItemDto[]>([]);
   const [inventoryForm, setInventoryForm] = useState({
@@ -80,24 +100,31 @@ export function App() {
   const [production, setProduction] = useState<ProductionTaskDto[]>([]);
 
   async function refresh() {
-    const data = await apiGet<CustomerWithOrders[]>("/api/customers");
-    const settings = await apiGet<MaterialSettingsDto>("/api/materials/settings");
-    const rules = await apiGet<DimensionRulesDto>("/api/materials/dimension-rules");
-    const templateData = await apiGet<WindowTemplateDto[]>("/api/templates/windows");
-    const inventoryData = await apiGet<InventoryItemDto[]>("/api/inventory");
-    const productionData = await apiGet<ProductionTaskDto[]>("/api/production");
-    setCustomers(data);
-    setMaterials(settings);
-    setDimensionRules(rules);
-    setTemplates(templateData);
-    setInventory(inventoryData);
-    setProduction(productionData);
-    const firstOrder = data[0]?.orders[0];
-    if (firstOrder) {
-      const order = await apiGet<OrderDetail>(`/api/orders/${firstOrder.id}`);
-      setActiveOrder(order);
-      setActiveWindowId(order.windows[0]?.id ?? null);
-      if (order.windows[0]) setForm(windowToForm(order.windows[0]));
+    const [customersResult, settingsResult, rulesResult, templateResult, inventoryResult, productionResult] = await Promise.allSettled([
+      apiGet<CustomerWithOrders[]>("/api/customers"),
+      apiGet<MaterialSettingsDto>("/api/materials/settings"),
+      apiGet<DimensionRulesDto>("/api/materials/dimension-rules"),
+      apiGet<WindowTemplateDto[]>("/api/templates/windows"),
+      apiGet<InventoryItemDto[]>("/api/inventory"),
+      apiGet<ProductionTaskDto[]>("/api/production")
+    ]);
+    if (settingsResult.status === "fulfilled") setMaterials(settingsResult.value);
+    if (rulesResult.status === "fulfilled") setDimensionRules(rulesResult.value);
+    if (templateResult.status === "fulfilled") setTemplates(templateResult.value);
+    if (inventoryResult.status === "fulfilled") setInventory(inventoryResult.value);
+    if (productionResult.status === "fulfilled") setProduction(productionResult.value);
+    if (customersResult.status === "fulfilled") {
+      const data = customersResult.value;
+      setCustomers(data);
+      const firstOrder = data[0]?.orders[0];
+      if (firstOrder) {
+        const order = await apiGet<OrderDetail>(`/api/orders/${firstOrder.id}`);
+        setActiveOrder(order);
+        setActiveWindowId(order.windows[0]?.id ?? null);
+        if (order.windows[0]) setForm(windowToForm(order.windows[0]));
+      }
+    } else {
+      setMessage("后端暂未连接，当前先使用本地默认材料规格；启动后端后会自动读取保存的真实配置。");
     }
   }
 
@@ -188,7 +215,7 @@ export function App() {
   async function saveMaterials() {
     if (!materials) return;
     const nextStockLengths = normalizeStockLengths(stockLengths);
-    await apiPut("/api/materials/settings", {
+    const nextMaterials = {
       stockLengthsMm: nextStockLengths,
       glassSheetSpecs,
       kerfMm: materials.kerfMm,
@@ -199,9 +226,15 @@ export function App() {
       hardwarePricePerWindow: Math.round(materials.hardwarePricePerWindow),
       laborPricePerSqm: Math.round(materials.laborPricePerSqm),
       profitRate: Math.round(materials.profitRate)
-    });
-    if (activeOrder) setActiveOrder(await apiGet<OrderDetail>(`/api/orders/${activeOrder.id}`));
-    setMessage("材料价格、原料规格和锯缝已保存。");
+    };
+    setMaterials(nextMaterials);
+    try {
+      await apiPut("/api/materials/settings", nextMaterials);
+      if (activeOrder) setActiveOrder(await apiGet<OrderDetail>(`/api/orders/${activeOrder.id}`));
+      setMessage("材料价格、原料规格和锯缝已保存。");
+    } catch {
+      setMessage("本地页面已更新材料规格；后端未连接或未登录，暂时无法持久保存。");
+    }
   }
 
   function updateStockLength(index: number, value: number) {
