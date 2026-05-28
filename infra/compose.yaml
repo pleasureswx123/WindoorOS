@@ -1,0 +1,38 @@
+services:
+  postgres:
+    image: postgres@sha256:5a65324fe84dc41709ff914e90b07f3e2f577073ed27bf917d4873aca0c9ec51
+    container_name: windooros-postgres
+    environment:
+      POSTGRES_USER: windooros
+      POSTGRES_PASSWORD: windooros
+      POSTGRES_DB: windooros
+    ports:
+      - "55432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+
+  redis:
+    image: redis@sha256:24ea35ee039d7345bef2377611e3b1a615231746de4cfea74c1414575ee56167
+    container_name: windooros-redis
+    ports:
+      - "56379:6379"
+    volumes:
+      - redis-data:/data
+
+  minio:
+    image: minio/minio@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
+    container_name: windooros-minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: windooros
+      MINIO_ROOT_PASSWORD: windooros123
+    ports:
+      - "59000:9000"
+      - "59001:9001"
+    volumes:
+      - minio-data:/data
+
+volumes:
+  postgres-data:
+  redis-data:
+  minio-data:

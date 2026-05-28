@@ -1,0 +1,17 @@
+node_modules
+dist
+coverage
+.env
+.env.local
+.idea
+.turbo
+.cache
+*.log
+*.png
+apps/api/generated
+apps/api/prisma/dev.db
+uploads
+data
+windooros-*.png
+api-debug.*.log
+.api-*.log

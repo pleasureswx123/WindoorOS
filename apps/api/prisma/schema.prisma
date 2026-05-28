@@ -1,0 +1,185 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Tenant {
+  id        String     @id @default(cuid())
+  name      String
+  plan      String     @default("free")
+  users     User[]
+  customers Customer[]
+  materials Material[]
+  settings  AppSetting[]
+  templates WindowTemplate[]
+  inventory InventoryItem[]
+  productionTasks ProductionTask[]
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+}
+
+model User {
+  id        String   @id @default(cuid())
+  tenantId  String
+  phone     String   @unique
+  name      String?
+  role      String   @default("owner")
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Customer {
+  id        String   @id @default(cuid())
+  tenantId  String
+  name      String
+  phone     String
+  address   String
+  status    String   @default("新线索")
+  note      String?
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  orders    Order[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Order {
+  id          String        @id @default(cuid())
+  tenantId    String
+  customerId  String
+  orderNo     String
+  status      String        @default("DRAFT")
+  totalAmount Decimal       @default(0)
+  customer    Customer      @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  windows     WindowUnit[]
+  quotes      Quote[]
+  plans       CuttingPlan[]
+  productionTasks ProductionTask[]
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+}
+
+model WindowUnit {
+  id           String   @id @default(cuid())
+  orderId      String
+  name         String
+  floor        String
+  position     String
+  widthMm      Int
+  heightMm     Int
+  quantity     Int
+  openType     String
+  drawingModel Json
+  note         String?
+  order        Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model Material {
+  id        String   @id @default(cuid())
+  tenantId  String
+  category  String
+  code      String
+  name      String
+  specs     Json
+  price     Decimal
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model CuttingPlan {
+  id            String   @id @default(cuid())
+  orderId       String
+  type          String
+  inputSnapshot Json
+  result        Json
+  order         Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  createdAt     DateTime @default(now())
+}
+
+model Quote {
+  id         String   @id @default(cuid())
+  orderId    String
+  subtotal   Decimal
+  profit     Decimal
+  finalTotal Decimal
+  detail     Json
+  order      Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  createdAt  DateTime @default(now())
+}
+
+model AppSetting {
+  id        String   @id @default(cuid())
+  tenantId  String
+  key       String
+  value     Json
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([tenantId, key])
+}
+
+model ExportTask {
+  id        String   @id @default(cuid())
+  type      String
+  status    String   @default("PENDING")
+  input     Json
+  resultUrl String?
+  error     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model WindowTemplate {
+  id        String   @id @default(cuid())
+  tenantId  String
+  name      String
+  category  String
+  widthMm   Int
+  heightMm  Int
+  openType  String
+  verticalMullions Int
+  horizontalMullions Int
+  drawingModel Json
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model InventoryItem {
+  id          String   @id @default(cuid())
+  tenantId    String
+  materialCode String
+  materialType String
+  lengthMm    Int?
+  widthMm     Int?
+  heightMm    Int?
+  quantity    Int
+  source      String
+  note        String?
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model ProductionTask {
+  id        String   @id @default(cuid())
+  tenantId  String
+  orderId   String
+  title     String
+  status    String   @default("待备料")
+  priority  Int      @default(0)
+  dueDate   DateTime?
+  note      String?
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  order     Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
