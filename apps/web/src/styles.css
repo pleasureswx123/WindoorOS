@@ -462,7 +462,7 @@ label {
   background: linear-gradient(90deg, transparent 0, transparent 99%, #e5e7eb 99%);
 }
 .profile-cut-bar {
-  display: flex;
+  display: grid;
   min-height: 24px;
   overflow: hidden;
   border: 1px solid #ccd6e4;
@@ -472,7 +472,7 @@ label {
 .profile-cut-segment,
 .profile-cut-waste {
   display: grid;
-  min-width: 12px;
+  min-width: 0;
   align-content: center;
   justify-items: center;
   gap: 0;
@@ -509,7 +509,7 @@ label {
   background: #e2e8f0;
 }
 .profile-cut-kerf {
-  min-width: 2px;
+  min-width: 0;
   background: repeating-linear-gradient(90deg, #111827 0 2px, #facc15 2px 4px);
 }
 .profile-cut-waste {
@@ -544,25 +544,41 @@ label {
 }
 .glass-layout {
   display: grid;
-  gap: 3px;
+  width: 100%;
+  gap: 0;
   padding: 6px;
   border: 1px solid var(--line-soft);
   border-radius: 8px;
   background: #f8fdff;
 }
 .glass-row {
-  display: flex;
-  gap: 3px;
-}
-.glass-row span {
   display: grid;
-  min-width: 48px;
+  min-height: 0;
+}
+.glass-row span,
+.glass-row i,
+.glass-bottom-waste {
+  display: grid;
+  min-width: 0;
+  min-height: 0;
   place-items: center;
   border: 1px solid #9fcbd3;
-  border-radius: 4px;
   background: #dff6fa;
   color: #23545c;
-  font-size: 11px;
+  font-size: 10px;
+  font-style: normal;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.glass-row i,
+.glass-bottom-waste {
+  border-color: #d7e2e7;
+  background: repeating-linear-gradient(135deg, #f1f5f9 0 6px, #e8eef4 6px 12px);
+  color: transparent;
+}
+.glass-row + .glass-row {
+  border-top: 1px solid rgba(99, 132, 146, .2);
 }
 .mini-row,
 .task-row {

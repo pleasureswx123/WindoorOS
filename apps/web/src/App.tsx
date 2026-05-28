@@ -813,15 +813,7 @@ export function App() {
               {group.sheets.slice(0, 4).map((sheet, index) => (
                 <div key={index} className="glass-sheet">
                   <small>第 {index + 1} 张：原片 {sheet.sheetWidthMm}x{sheet.sheetHeightMm}mm · 余面积 {sheet.wasteAreaSqm.toFixed(2)}㎡</small>
-                  <div className="glass-layout">
-                    {sheet.rows.map((row, rowIndex) => (
-                      <div key={rowIndex} className="glass-row" style={{ height: `${Math.max(22, row.heightMm / 20)}px` }}>
-                        {row.pieces.map((piece, pieceIndex) => (
-                          <span key={pieceIndex} style={{ flex: `${piece.widthMm}` }}>{piece.widthMm}x{piece.heightMm}</span>
-                        ))}
-                      </div>
-                    ))}
-                  </div>
+                  <GlassSheetVisualizer sheet={sheet} />
                 </div>
               ))}
             </div>
@@ -966,6 +958,12 @@ function ProfileCutVisualizer({
         const cutTotal = bar.cuts.reduce((sum, cut) => sum + cut.lengthMm, 0);
         const visibleKerf = Math.max(0, bar.kerfTotalMm ?? Math.max(0, bar.cuts.length - 1) * kerfMm);
         const waste = Math.max(0, bar.stockLengthMm - cutTotal - visibleKerf);
+        const columns: number[] = [];
+        bar.cuts.forEach((cut, cutIndex) => {
+          columns.push(cut.lengthMm);
+          if (cutIndex < bar.cuts.length - 1 && kerfMm > 0) columns.push(kerfMm);
+        });
+        if (waste > 0) columns.push(waste);
         return (
           <div key={`${bar.stockLengthMm}-${index}`} className="profile-cut-row">
             <div className="profile-cut-meta">
@@ -973,14 +971,19 @@ function ProfileCutVisualizer({
               <span>规格 {bar.stockLengthMm}mm · 切料 {cutTotal}mm · 锯缝 {Math.round(visibleKerf)}mm · 余料 {Math.round(waste)}mm</span>
             </div>
             <div className="profile-cut-track" aria-label={`第 ${index + 1} 根 ${bar.stockLengthMm}mm 型材切割图`}>
-              <div className="profile-cut-bar" style={{ width: `${Math.max(12, (bar.stockLengthMm / maxStockLength) * 100)}%` }}>
+              <div
+                className="profile-cut-bar"
+                style={{
+                  width: `${Math.max(12, (bar.stockLengthMm / maxStockLength) * 100)}%`,
+                  gridTemplateColumns: columns.map((length) => `minmax(0, ${length}fr)`).join(" ")
+                }}
+              >
               {bar.cuts.map((cut, cutIndex) => {
                 const showKerfAfter = cutIndex < bar.cuts.length - 1 && kerfMm > 0;
                 return (
                   <Fragment key={`${cut.label}-${cut.lengthMm}-${cutIndex}`}>
                     <span
                       className={`profile-cut-segment ${profileCutClass(cut.label)}`}
-                      style={{ flexGrow: cut.lengthMm, flexBasis: 0 }}
                       title={`${cut.label} ${cut.lengthMm}mm`}
                     >
                       <b>{shortCutLabel(cut.label)}</b>
@@ -989,7 +992,6 @@ function ProfileCutVisualizer({
                     {showKerfAfter && (
                       <span
                         className="profile-cut-kerf"
-                        style={{ flexGrow: kerfMm, flexBasis: 0 }}
                         title={`锯缝 ${kerfMm}mm`}
                       />
                     )}
@@ -999,7 +1001,6 @@ function ProfileCutVisualizer({
               {waste > 0 && (
                 <span
                   className="profile-cut-waste"
-                  style={{ flexGrow: waste, flexBasis: 0 }}
                   title={`余料 ${Math.round(waste)}mm`}
                 >
                   <b>余料</b>
@@ -1018,6 +1019,49 @@ function ProfileCutVisualizer({
         <span><i className="legend-waste" />余料</span>
         <span><i className="legend-kerf" />锯缝</span>
       </div>
+    </div>
+  );
+}
+
+function GlassSheetVisualizer({
+  sheet
+}: {
+  sheet: OrderSummary["glassCutting"][number]["sheets"][number];
+}) {
+  const usedHeight = sheet.rows.reduce((sum, row) => sum + row.heightMm, 0);
+  const bottomWasteHeight = Math.max(0, sheet.sheetHeightMm - usedHeight);
+  const rowTracks = [
+    ...sheet.rows.map((row) => `minmax(0, ${row.heightMm}fr)`),
+    ...(bottomWasteHeight > 0 ? [`minmax(0, ${bottomWasteHeight}fr)`] : [])
+  ].join(" ");
+  return (
+    <div
+      className="glass-layout"
+      style={{
+        aspectRatio: `${sheet.sheetWidthMm} / ${sheet.sheetHeightMm}`,
+        gridTemplateRows: rowTracks
+      }}
+      aria-label={`玻璃原片 ${sheet.sheetWidthMm}x${sheet.sheetHeightMm}mm 排版图`}
+    >
+      {sheet.rows.map((row, rowIndex) => {
+        const usedWidth = row.pieces.reduce((sum, piece) => sum + piece.widthMm, 0);
+        const rightWasteWidth = Math.max(0, sheet.sheetWidthMm - usedWidth);
+        const columns = [
+          ...row.pieces.map((piece) => `minmax(0, ${piece.widthMm}fr)`),
+          ...(rightWasteWidth > 0 ? [`minmax(0, ${rightWasteWidth}fr)`] : [])
+        ].join(" ");
+        return (
+          <div key={rowIndex} className="glass-row" style={{ gridTemplateColumns: columns }}>
+            {row.pieces.map((piece, pieceIndex) => (
+              <span key={pieceIndex} title={`${piece.widthMm}x${piece.heightMm}mm`}>
+                {piece.widthMm}x{piece.heightMm}
+              </span>
+            ))}
+            {rightWasteWidth > 0 && <i title={`右侧余料 ${rightWasteWidth}x${row.heightMm}mm`} />}
+          </div>
+        );
+      })}
+      {bottomWasteHeight > 0 && <div className="glass-bottom-waste" title={`底部余料 ${sheet.sheetWidthMm}x${bottomWasteHeight}mm`} />}
     </div>
   );
 }
