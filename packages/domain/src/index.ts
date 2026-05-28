@@ -10,7 +10,8 @@ export type OrderStatus =
   | "INSTALLED"
   | "PAID";
 
-export type OpenType = "fixed" | "casement" | "sliding" | "top-hung";
+export type OpenType = "fixed" | "casement" | "sliding" | "top-hung" | "bottom-hung";
+export type OpenDirection = "left" | "right" | "top" | "bottom" | "slide-left" | "slide-right";
 export type MullionDirection = "vertical" | "horizontal";
 
 export type Customer = {
@@ -47,6 +48,7 @@ export type Mullion = {
 export type Sash = {
   id: string;
   type: OpenType;
+  openDirection?: OpenDirection;
   area: RectMm;
 };
 
@@ -68,9 +70,13 @@ export type RectMm = {
 };
 
 export type DimensionRules = {
+  frameFaceWidthMm: number;
+  mullionFaceWidthMm: number;
+  sashFaceWidthMm: number;
   frameDeductionMm: number;
   mullionDeductionMm: number;
   glassDeductionMm: number;
+  glassInstallGapMm: number;
   sashDeductionMm: number;
 };
 
@@ -138,9 +144,13 @@ export type MaterialTakeoff = {
 };
 
 export const defaultDimensionRules: DimensionRules = {
+  frameFaceWidthMm: 70,
+  mullionFaceWidthMm: 70,
+  sashFaceWidthMm: 60,
   frameDeductionMm: 0,
   mullionDeductionMm: 90,
-  glassDeductionMm: 120,
+  glassDeductionMm: 24,
+  glassInstallGapMm: 12,
   sashDeductionMm: 120
 };
 
@@ -237,6 +247,7 @@ export function createDrawingModel(input: {
             {
               id: "sash-1",
               type: input.openType,
+              openDirection: input.openType === "top-hung" ? "top" : input.openType === "bottom-hung" ? "bottom" : input.openType === "sliding" ? "slide-right" : "right",
               area: { x: 0, y: 0, width: columnWidths[0] ?? Math.floor(input.widthMm / columns), height: input.heightMm }
             }
           ],
@@ -300,26 +311,31 @@ export function calculateMaterialTakeoff(windows: WindowUnit[]): MaterialTakeoff
   for (const item of windows) {
     const qty = item.quantity;
     const model = item.drawingModel;
+    const rules = { ...defaultDimensionRules, ...(model.dimensionRules ?? {}) };
     windowCount += qty;
     windowAreaSqm += (item.widthMm * item.heightMm * qty) / 1_000_000;
-    addProfile(model.outerFrame.profileCode, "外框横料", item.widthMm, qty * 2);
-    addProfile(model.outerFrame.profileCode, "外框竖料", item.heightMm, qty * 2);
+    addProfile(model.outerFrame.profileCode, "外框横料", Math.max(100, item.widthMm - rules.frameDeductionMm), qty * 2);
+    addProfile(model.outerFrame.profileCode, "外框竖料", Math.max(100, item.heightMm - rules.frameDeductionMm), qty * 2);
 
     for (const mullion of model.mullions) {
       const length =
         mullion.direction === "vertical"
-          ? (mullion.toY ?? item.heightMm) - (mullion.fromY ?? 0) - model.dimensionRules.mullionDeductionMm
-          : (mullion.toX ?? item.widthMm) - (mullion.fromX ?? 0) - model.dimensionRules.mullionDeductionMm;
+          ? (mullion.toY ?? item.heightMm) - (mullion.fromY ?? 0) - rules.mullionDeductionMm
+          : (mullion.toX ?? item.widthMm) - (mullion.fromX ?? 0) - rules.mullionDeductionMm;
       addProfile(mullion.profileCode, mullion.direction === "vertical" ? "竖中梃" : "横中梃", Math.max(100, length), qty);
     }
 
-    for (const sash of model.sashes) {
-      addProfile(`${model.outerFrame.profileCode.replace("-FRAME", "")}-SASH`, "扇横料", sash.area.width, qty * 2);
-      addProfile(`${model.outerFrame.profileCode.replace("-FRAME", "")}-SASH`, "扇竖料", sash.area.height - model.dimensionRules.sashDeductionMm, qty * 2);
+    for (const sash of model.sashes ?? []) {
+      const sashClear = rectClearOpening(model, sash.area);
+      addProfile(`${model.outerFrame.profileCode.replace("-FRAME", "")}-SASH`, "扇横料", Math.max(100, sashClear.width), qty * 2);
+      addProfile(`${model.outerFrame.profileCode.replace("-FRAME", "")}-SASH`, "扇竖料", Math.max(100, sashClear.height - rules.sashDeductionMm), qty * 2);
     }
 
     for (const panel of model.glassPanels) {
-      addGlass(panel.type, Math.max(100, panel.width - model.dimensionRules.glassDeductionMm), Math.max(100, panel.height - model.dimensionRules.glassDeductionMm), qty * panel.quantity);
+      const sash = (model.sashes ?? []).find((item) => sameRect(item.area, panelRect(panel)));
+      const clear = sash ? sashInnerGlassOpening(model, sash.area) : panelClearOpening(model, panel);
+      const deduction = rules.glassDeductionMm || rules.glassInstallGapMm * 2;
+      addGlass(panel.type, Math.max(100, clear.width - deduction), Math.max(100, clear.height - deduction), qty * panel.quantity);
     }
   }
 
@@ -328,5 +344,43 @@ export function calculateMaterialTakeoff(windows: WindowUnit[]): MaterialTakeoff
     glass: [...glass.values()],
     windowCount,
     windowAreaSqm
+  };
+}
+
+function panelRect(panel: GlassPanel): RectMm {
+  return { x: panel.x ?? 0, y: panel.y ?? 0, width: panel.width, height: panel.height };
+}
+
+function sameRect(a: RectMm, b: RectMm) {
+  return Math.abs(a.x - b.x) <= 2 && Math.abs(a.y - b.y) <= 2 && Math.abs(a.width - b.width) <= 2 && Math.abs(a.height - b.height) <= 2;
+}
+
+function rectClearOpening(model: DrawingModel, area: RectMm) {
+  const rules = { ...defaultDimensionRules, ...(model.dimensionRules ?? {}) };
+  const left = area.x <= 1 ? rules.frameFaceWidthMm : rules.mullionFaceWidthMm / 2;
+  const right = area.x + area.width >= model.outerFrame.width - 1 ? rules.frameFaceWidthMm : rules.mullionFaceWidthMm / 2;
+  const top = area.y <= 1 ? rules.frameFaceWidthMm : rules.mullionFaceWidthMm / 2;
+  const bottom = area.y + area.height >= model.outerFrame.height - 1 ? rules.frameFaceWidthMm : rules.mullionFaceWidthMm / 2;
+  return {
+    x: area.x + left,
+    y: area.y + top,
+    width: Math.max(100, area.width - left - right),
+    height: Math.max(100, area.height - top - bottom)
+  };
+}
+
+function panelClearOpening(model: DrawingModel, panel: GlassPanel) {
+  return rectClearOpening(model, panelRect(panel));
+}
+
+function sashInnerGlassOpening(model: DrawingModel, area: RectMm) {
+  const rules = { ...defaultDimensionRules, ...(model.dimensionRules ?? {}) };
+  const sashOuter = rectClearOpening(model, area);
+  const inset = rules.sashFaceWidthMm;
+  return {
+    x: sashOuter.x + inset,
+    y: sashOuter.y + inset,
+    width: Math.max(100, sashOuter.width - inset * 2),
+    height: Math.max(100, sashOuter.height - inset * 2)
   };
 }

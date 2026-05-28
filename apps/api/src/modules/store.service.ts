@@ -582,14 +582,18 @@ export class StoreService implements OnModuleInit {
     const setting = await this.prisma.appSetting.findUnique({
       where: { tenantId_key: { tenantId: TENANT_ID, key: DIMENSION_RULES_KEY } }
     });
-    return (setting?.value as unknown as DimensionRules | undefined) ?? defaultDimensionRules;
+    return normalizeDimensionRules((setting?.value as Partial<DimensionRules> | undefined) ?? defaultDimensionRules);
   }
 
   async updateDimensionRules(dto: DimensionRulesDto) {
     const dimensionRules: DimensionRules = {
+      frameFaceWidthMm: dto.frameFaceWidthMm,
+      mullionFaceWidthMm: dto.mullionFaceWidthMm,
+      sashFaceWidthMm: dto.sashFaceWidthMm,
       frameDeductionMm: dto.frameDeductionMm,
       mullionDeductionMm: dto.mullionDeductionMm,
       glassDeductionMm: dto.glassDeductionMm,
+      glassInstallGapMm: dto.glassInstallGapMm,
       sashDeductionMm: dto.sashDeductionMm
     };
     await this.prisma.appSetting.upsert({
@@ -983,6 +987,24 @@ function normalizeMaterialSettings(value: Partial<MaterialSettings>): MaterialSe
     laborPricePerSqm: normalizeNumber(value.laborPricePerSqm, defaultMaterialSettings.laborPricePerSqm),
     profitRate: normalizeNumber(value.profitRate, defaultMaterialSettings.profitRate)
   };
+}
+
+function normalizeDimensionRules(value: Partial<DimensionRules>): DimensionRules {
+  return {
+    frameFaceWidthMm: clampNumber(value.frameFaceWidthMm, defaultDimensionRules.frameFaceWidthMm, 20, 180),
+    mullionFaceWidthMm: clampNumber(value.mullionFaceWidthMm, defaultDimensionRules.mullionFaceWidthMm, 20, 180),
+    sashFaceWidthMm: clampNumber(value.sashFaceWidthMm, defaultDimensionRules.sashFaceWidthMm, 20, 180),
+    frameDeductionMm: clampNumber(value.frameDeductionMm, defaultDimensionRules.frameDeductionMm, 0, 200),
+    mullionDeductionMm: clampNumber(value.mullionDeductionMm, defaultDimensionRules.mullionDeductionMm, 0, 200),
+    glassDeductionMm: clampNumber(value.glassDeductionMm, defaultDimensionRules.glassDeductionMm, 0, 200),
+    glassInstallGapMm: clampNumber(value.glassInstallGapMm, defaultDimensionRules.glassInstallGapMm, 0, 80),
+    sashDeductionMm: clampNumber(value.sashDeductionMm, defaultDimensionRules.sashDeductionMm, 0, 200)
+  };
+}
+
+function clampNumber(value: number | undefined, fallback: number, min: number, max: number) {
+  const next = normalizeNumber(value, fallback);
+  return Math.round(Math.min(max, Math.max(min, next)));
 }
 
 function normalizeNumber(value: number | undefined, fallback: number) {

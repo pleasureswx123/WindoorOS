@@ -96,7 +96,7 @@ export class CreateWindowDto {
   @Max(999)
   quantity!: number;
 
-  @IsIn(["fixed", "casement", "sliding", "top-hung"])
+  @IsIn(["fixed", "casement", "sliding", "top-hung", "bottom-hung"])
   openType!: OpenType;
 
   @IsInt()
@@ -162,7 +162,7 @@ export class UpdateWindowDto {
   quantity?: number;
 
   @IsOptional()
-  @IsIn(["fixed", "casement", "sliding", "top-hung"])
+  @IsIn(["fixed", "casement", "sliding", "top-hung", "bottom-hung"])
   openType?: OpenType;
 
   @IsOptional()
@@ -271,6 +271,21 @@ export class MaterialSettingsDto {
 
 export class DimensionRulesDto {
   @IsInt()
+  @Min(20)
+  @Max(180)
+  frameFaceWidthMm!: number;
+
+  @IsInt()
+  @Min(20)
+  @Max(180)
+  mullionFaceWidthMm!: number;
+
+  @IsInt()
+  @Min(20)
+  @Max(180)
+  sashFaceWidthMm!: number;
+
+  @IsInt()
   @Min(0)
   @Max(200)
   frameDeductionMm!: number;
@@ -284,6 +299,11 @@ export class DimensionRulesDto {
   @Min(0)
   @Max(200)
   glassDeductionMm!: number;
+
+  @IsInt()
+  @Min(0)
+  @Max(80)
+  glassInstallGapMm!: number;
 
   @IsInt()
   @Min(0)

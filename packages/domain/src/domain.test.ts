@@ -41,6 +41,7 @@ describe("drawing model", () => {
 
     expect(takeoff.windowCount).toBe(2);
     expect(takeoff.profiles.length).toBeGreaterThan(3);
-    expect(takeoff.glass[0]?.quantity).toBe(4);
+    expect(takeoff.profiles.some((item) => item.materialCode.endsWith("-SASH"))).toBe(true);
+    expect(takeoff.glass.reduce((sum, item) => sum + item.quantity, 0)).toBe(4);
   });
 });

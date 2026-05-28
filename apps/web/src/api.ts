@@ -29,13 +29,14 @@ export type WindowUnitDto = {
   widthMm: number;
   heightMm: number;
   quantity: number;
-  openType: "fixed" | "casement" | "sliding" | "top-hung";
+  openType: "fixed" | "casement" | "sliding" | "top-hung" | "bottom-hung";
   drawingModel: {
     outerFrame?: { width: number; height: number; profileCode: string };
     mullions: Array<{ id: string; direction: "vertical" | "horizontal"; x?: number; y?: number; fromX?: number; toX?: number; fromY?: number; toY?: number; profileCode?: string }>;
+    sashes?: Array<{ id: string; type: "fixed" | "casement" | "sliding" | "top-hung" | "bottom-hung"; openDirection?: "left" | "right" | "top" | "bottom" | "slide-left" | "slide-right"; area: { x: number; y: number; width: number; height: number } }>;
     glassPanels: Array<{ id: string; x?: number; y?: number; width: number; height: number; type: string; quantity: number }>;
     dimensionRules?: DimensionRulesDto;
-    openType?: "fixed" | "casement" | "sliding" | "top-hung";
+    openType?: "fixed" | "casement" | "sliding" | "top-hung" | "bottom-hung";
   };
 };
 
@@ -129,9 +130,13 @@ export type MaterialSettingsDto = {
 };
 
 export type DimensionRulesDto = {
+  frameFaceWidthMm: number;
+  mullionFaceWidthMm: number;
+  sashFaceWidthMm: number;
   frameDeductionMm: number;
   mullionDeductionMm: number;
   glassDeductionMm: number;
+  glassInstallGapMm: number;
   sashDeductionMm: number;
 };
 
@@ -141,7 +146,7 @@ export type WindowTemplateDto = {
   category: string;
   widthMm: number;
   heightMm: number;
-  openType: "fixed" | "casement" | "sliding" | "top-hung";
+  openType: "fixed" | "casement" | "sliding" | "top-hung" | "bottom-hung";
   verticalMullions: number;
   horizontalMullions: number;
   drawingModel: WindowUnitDto["drawingModel"];

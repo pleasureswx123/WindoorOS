@@ -24,7 +24,7 @@ type WindowForm = {
   widthMm: number;
   heightMm: number;
   quantity: number;
-  openType: "fixed" | "casement" | "sliding" | "top-hung";
+  openType: "fixed" | "casement" | "sliding" | "top-hung" | "bottom-hung";
   verticalMullions: number;
   horizontalMullions: number;
   verticalPositionsMm: number[];
@@ -61,10 +61,14 @@ const defaultMaterials: MaterialSettingsDto = {
 };
 
 const defaultDimensionRules: DimensionRulesDto = {
-  frameDeductionMm: 38,
-  mullionDeductionMm: 18,
-  glassDeductionMm: 12,
-  sashDeductionMm: 26
+  frameFaceWidthMm: 70,
+  mullionFaceWidthMm: 70,
+  sashFaceWidthMm: 60,
+  frameDeductionMm: 0,
+  mullionDeductionMm: 90,
+  glassDeductionMm: 24,
+  glassInstallGapMm: 12,
+  sashDeductionMm: 120
 };
 
 export function App() {
@@ -83,6 +87,8 @@ export function App() {
   const [drawingHistory, setDrawingHistory] = useState<WindowUnitDto["drawingModel"][]>([]);
   const freeDragBaselineRef = useRef<WindowUnitDto["drawingModel"] | null>(null);
   const freeDragHistoryPushedRef = useRef(false);
+  const autoSaveTimerRef = useRef<number | null>(null);
+  const lastAutoSaveKeyRef = useRef("");
   const [materials, setMaterials] = useState<MaterialSettingsDto>(defaultMaterials);
   const [dimensionRules, setDimensionRules] = useState<DimensionRulesDto>(defaultDimensionRules);
   const [templates, setTemplates] = useState<WindowTemplateDto[]>([]);
@@ -108,8 +114,8 @@ export function App() {
       apiGet<InventoryItemDto[]>("/api/inventory"),
       apiGet<ProductionTaskDto[]>("/api/production")
     ]);
-    if (settingsResult.status === "fulfilled") setMaterials(settingsResult.value);
-    if (rulesResult.status === "fulfilled") setDimensionRules(rulesResult.value);
+    if (settingsResult.status === "fulfilled") setMaterials(coerceMaterialSettings(settingsResult.value));
+    if (rulesResult.status === "fulfilled") setDimensionRules(coerceDimensionRules(rulesResult.value));
     if (templateResult.status === "fulfilled") setTemplates(templateResult.value);
     if (inventoryResult.status === "fulfilled") setInventory(inventoryResult.value);
     if (productionResult.status === "fulfilled") setProduction(productionResult.value);
@@ -132,6 +138,8 @@ export function App() {
     void refresh();
   }, []);
 
+  const activeWindow = activeOrder?.windows.find((item) => item.id === activeWindowId) ?? activeOrder?.windows[0];
+
   useEffect(() => {
     if (!activeOrder?.customer) return;
     setCustomerEdit({
@@ -143,11 +151,32 @@ export function App() {
     });
   }, [activeOrder?.customer?.id]);
 
-  const activeWindow = activeOrder?.windows.find((item) => item.id === activeWindowId) ?? activeOrder?.windows[0];
+  useEffect(() => {
+    if (!token || !activeOrder || !activeWindow) return;
+    if (sameWindowForm(form, activeWindow)) return;
+    const key = `${activeWindow.id}:${JSON.stringify(form)}`;
+    if (lastAutoSaveKeyRef.current === key) return;
+    if (autoSaveTimerRef.current) window.clearTimeout(autoSaveTimerRef.current);
+    autoSaveTimerRef.current = window.setTimeout(() => {
+      lastAutoSaveKeyRef.current = key;
+      void apiPatch<WindowUnitDto>(`/api/orders/windows/${activeWindow.id}`, form)
+        .then(() => apiGet<OrderDetail>(`/api/orders/${activeOrder.id}`))
+        .then((order) => {
+          setActiveOrder(order);
+          setMessage("窗型已自动保存，采购、切割、报价已刷新。");
+        })
+        .catch(() => setMessage("当前未能自动保存；请确认已登录并且后端服务正常。"));
+    }, 700);
+    return () => {
+      if (autoSaveTimerRef.current) window.clearTimeout(autoSaveTimerRef.current);
+    };
+  }, [token, activeOrder?.id, activeWindow?.id, form]);
+
   const groupedCustomers = useMemo(() => customers.slice().sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt)), [customers]);
   const freeModel = form.drawingModel;
   const selectedGlass = freeModel?.glassPanels.find((panel) => panel.id === selectedGlassId);
   const selectedMullion = freeModel?.mullions.find((mullion) => mullion.id === selectedMullionId);
+  const selectedSash = selectedGlass && freeModel ? findSashForPanel(freeModel.sashes ?? [], selectedGlass) : undefined;
   const stockLengths = getStockLengths(materials);
   const glassSheetSpecs = getGlassSheetSpecs(materials);
 
@@ -276,9 +305,13 @@ export function App() {
   async function saveDimensionRules() {
     if (!dimensionRules) return;
     await apiPut("/api/materials/dimension-rules", {
+      frameFaceWidthMm: Math.round(dimensionRules.frameFaceWidthMm),
+      mullionFaceWidthMm: Math.round(dimensionRules.mullionFaceWidthMm),
+      sashFaceWidthMm: Math.round(dimensionRules.sashFaceWidthMm),
       frameDeductionMm: Math.round(dimensionRules.frameDeductionMm),
       mullionDeductionMm: Math.round(dimensionRules.mullionDeductionMm),
       glassDeductionMm: Math.round(dimensionRules.glassDeductionMm),
+      glassInstallGapMm: Math.round(dimensionRules.glassInstallGapMm),
       sashDeductionMm: Math.round(dimensionRules.sashDeductionMm)
     });
     if (activeOrder) setActiveOrder(await apiGet<OrderDetail>(`/api/orders/${activeOrder.id}`));
@@ -424,6 +457,41 @@ export function App() {
     setMessage("已按当前宽高和中梃数量重置分格。");
   }
 
+  function setSelectedGlassAsSash(type: WindowForm["openType"], openDirection: NonNullable<WindowUnitDto["drawingModel"]["sashes"]>[number]["openDirection"]) {
+    const model = ensureFreeModel();
+    const panel = model.glassPanels.find((item) => item.id === selectedGlassId);
+    if (!panel) {
+      setMessage("请先点选一块玻璃区域，再设置窗扇。");
+      return;
+    }
+    const existing = (model.sashes ?? []).filter((sash) => !sameRect(sash.area, panelToRect(panel)));
+    commitDrawingModel(
+      {
+        ...model,
+        sashes: [
+          ...existing,
+          {
+            id: `sash-${Date.now()}`,
+            type,
+            openDirection,
+            area: panelToRect(panel)
+          }
+        ]
+      },
+      "已把选中区域设为窗扇，采购、切割和报价会按扇料重新计算。"
+    );
+  }
+
+  function setSelectedGlassAsFixed() {
+    const model = ensureFreeModel();
+    const panel = model.glassPanels.find((item) => item.id === selectedGlassId);
+    if (!panel) {
+      setMessage("请先点选一块区域。");
+      return;
+    }
+    commitDrawingModel({ ...model, sashes: (model.sashes ?? []).filter((sash) => !sameRect(sash.area, panelToRect(panel))) }, "已把选中区域设为固定玻璃。");
+  }
+
   function splitSelectedGlass(direction: "vertical" | "horizontal") {
     const model = ensureFreeModel();
     const target = model.glassPanels.find((panel) => panel.id === selectedGlassId);
@@ -444,6 +512,7 @@ export function App() {
     const firstSize = Math.round(((direction === "vertical" ? target.width : target.height) * splitPercent) / 100);
     const secondSize = (direction === "vertical" ? target.width : target.height) - firstSize;
     const nextPanels = model.glassPanels.filter((panel) => panel.id !== target.id);
+    const nextSashes = (model.sashes ?? []).filter((sash) => !sameRect(sash.area, panelToRect(target)));
     const cutId = `m-${Date.now()}`;
     const panelId = `g-${Date.now()}`;
     if (direction === "vertical") {
@@ -461,7 +530,7 @@ export function App() {
       );
       model.mullions.push({ id: cutId, direction: "horizontal", y: cutY, fromX: x, toX: x + target.width, profileCode: "ALU-70-MULLION" });
     }
-    commitDrawingModel({ ...model, glassPanels: sortPanels(nextPanels) }, direction === "vertical" ? "已竖切选中玻璃区域。" : "已横切选中玻璃区域。");
+    commitDrawingModel({ ...model, sashes: nextSashes, glassPanels: sortPanels(nextPanels) }, direction === "vertical" ? "已竖切选中玻璃区域。" : "已横切选中玻璃区域。");
     setSelectedGlassId(null);
     setSelectedMullionId(cutId);
   }
@@ -478,7 +547,7 @@ export function App() {
       setMessage("这根中梃两侧玻璃没有对齐，暂不能直接删除。");
       return;
     }
-    commitDrawingModel({ ...model, mullions: model.mullions.filter((item) => item.id !== mullion.id), glassPanels: sortPanels(nextPanels) }, "已删除中梃，并尝试合并相邻玻璃区域。");
+    commitDrawingModel({ ...model, mullions: model.mullions.filter((item) => item.id !== mullion.id), sashes: keepSashesCoveredByPanels(model.sashes ?? [], nextPanels), glassPanels: sortPanels(nextPanels) }, "已删除中梃，并尝试合并相邻玻璃区域。");
     setSelectedMullionId(null);
     setSelectedGlassId(null);
   }
@@ -514,7 +583,7 @@ export function App() {
           : { ...item, y: positionMm }
         : item
     );
-    setForm({ ...form, drawingModel: { ...model, mullions: nextMullions, glassPanels: sortPanels(updatedPanels) } });
+    setForm({ ...form, drawingModel: { ...model, mullions: nextMullions, sashes: remapSashesToPanels(model.sashes ?? [], model.glassPanels, updatedPanels), glassPanels: sortPanels(updatedPanels) } });
     setSelectedMullionId(id);
     setSelectedGlassId(null);
   }
@@ -665,7 +734,17 @@ export function App() {
               {selectedGlass ? (
                 <>
                   <strong>玻璃区域</strong>
-                  <span>{Math.round(selectedGlass.width)} x {Math.round(selectedGlass.height)}mm</span>
+                  <span>{selectedSash ? sashLabel(selectedSash) : "固定玻璃"} · {Math.round(selectedGlass.width)} x {Math.round(selectedGlass.height)}mm</span>
+                  <div className="selection-actions">
+                    <button className="ghost" onClick={() => setSelectedGlassAsFixed()}>固定玻璃</button>
+                    <button className="ghost" onClick={() => setSelectedGlassAsSash("fixed", undefined)}>固定窗扇</button>
+                    <button className="ghost" onClick={() => setSelectedGlassAsSash("casement", "left")}>左开扇</button>
+                    <button className="ghost" onClick={() => setSelectedGlassAsSash("casement", "right")}>右开扇</button>
+                    <button className="ghost" onClick={() => setSelectedGlassAsSash("top-hung", "top")}>上悬扇</button>
+                    <button className="ghost" onClick={() => setSelectedGlassAsSash("bottom-hung", "bottom")}>下悬扇</button>
+                    <button className="ghost" onClick={() => setSelectedGlassAsSash("sliding", "slide-left")}>左推拉</button>
+                    <button className="ghost" onClick={() => setSelectedGlassAsSash("sliding", "slide-right")}>右推拉</button>
+                  </div>
                 </>
               ) : selectedMullion ? (
                 <>
@@ -701,6 +780,7 @@ export function App() {
             onBeginFreeMullionDrag={beginFreeMullionDrag}
             onMoveFreeMullion={moveFreeMullion}
             onFinishFreeMullionDrag={finishFreeMullionDrag}
+            dimensionRules={dimensionRules}
           />
           <div className="window-list">
             {activeOrder?.windows.map((item) => (
@@ -733,6 +813,7 @@ export function App() {
                 <option value="casement">平开</option>
                 <option value="sliding">推拉</option>
                 <option value="top-hung">上悬</option>
+                <option value="bottom-hung">下悬</option>
               </select>
             </label>
           </div>
@@ -784,15 +865,19 @@ export function App() {
           )}
           {dimensionRules && (
             <div className="materials-box">
-              <div className="panel-title compact"><h2>下料扣减</h2><span>影响实际切割尺寸</span></div>
-              <p className="hint-text">扣尺就是量到的净尺寸不能直接下料，要扣掉框料搭接、胶缝、安装间隙等预留量。</p>
+              <div className="panel-title compact"><h2>型材系统配置</h2><span>面宽 + 扣尺</span></div>
+              <p className="hint-text">面宽用于画图和计算玻璃净口；扣尺用于实际下料。外框、窗扇、中梃都不是线，而是有可见宽度的型材。</p>
               <div className="grid2">
+                <NumberField label="外框面宽" value={dimensionRules.frameFaceWidthMm} onChange={(value) => setDimensionRules({ ...dimensionRules, frameFaceWidthMm: value })} />
+                <NumberField label="中梃面宽" value={dimensionRules.mullionFaceWidthMm} onChange={(value) => setDimensionRules({ ...dimensionRules, mullionFaceWidthMm: value })} />
+                <NumberField label="扇框面宽" value={dimensionRules.sashFaceWidthMm} onChange={(value) => setDimensionRules({ ...dimensionRules, sashFaceWidthMm: value })} />
+                <NumberField label="玻璃安装余量" value={dimensionRules.glassInstallGapMm} onChange={(value) => setDimensionRules({ ...dimensionRules, glassInstallGapMm: value })} />
                 <NumberField label="框料扣减" value={dimensionRules.frameDeductionMm} onChange={(value) => setDimensionRules({ ...dimensionRules, frameDeductionMm: value })} />
                 <NumberField label="中梃扣减" value={dimensionRules.mullionDeductionMm} onChange={(value) => setDimensionRules({ ...dimensionRules, mullionDeductionMm: value })} />
-                <NumberField label="玻璃扣减" value={dimensionRules.glassDeductionMm} onChange={(value) => setDimensionRules({ ...dimensionRules, glassDeductionMm: value })} />
+                <NumberField label="玻璃总扣尺" value={dimensionRules.glassDeductionMm} onChange={(value) => setDimensionRules({ ...dimensionRules, glassDeductionMm: value })} />
                 <NumberField label="扇料扣减" value={dimensionRules.sashDeductionMm} onChange={(value) => setDimensionRules({ ...dimensionRules, sashDeductionMm: value })} />
               </div>
-              <button className="ghost full" onClick={saveDimensionRules}>保存下料扣减</button>
+              <button className="ghost full" onClick={saveDimensionRules}>保存型材系统配置</button>
             </div>
           )}
           <p className="message">{message}</p>
@@ -926,6 +1011,14 @@ function NumberField({ label, value, onChange }: { label: string; value: number;
 
 function getStockLengths(materials: MaterialSettingsDto | null) {
   return materials?.stockLengthsMm?.length ? materials.stockLengthsMm : [2400, 3000, 6000];
+}
+
+function coerceMaterialSettings(value: unknown): MaterialSettingsDto {
+  return { ...defaultMaterials, ...(typeof value === "object" && value ? value : {}) };
+}
+
+function coerceDimensionRules(value: unknown): DimensionRulesDto {
+  return { ...defaultDimensionRules, ...(typeof value === "object" && value ? value : {}) };
 }
 
 function normalizeStockLengths(lengths: number[]) {
@@ -1199,11 +1292,38 @@ function windowToForm(item: WindowUnitDto): WindowForm {
   };
 }
 
+function sameWindowForm(form: WindowForm, item: WindowUnitDto) {
+  return JSON.stringify(form) === JSON.stringify(windowToForm(item));
+}
+
+function panelClearOpeningForCanvas(area: { x: number; y: number; width: number; height: number }, widthMm: number, heightMm: number, rules: DimensionRulesDto) {
+  const left = area.x <= 1 ? rules.frameFaceWidthMm : rules.mullionFaceWidthMm / 2;
+  const right = area.x + area.width >= widthMm - 1 ? rules.frameFaceWidthMm : rules.mullionFaceWidthMm / 2;
+  const top = area.y <= 1 ? rules.frameFaceWidthMm : rules.mullionFaceWidthMm / 2;
+  const bottom = area.y + area.height >= heightMm - 1 ? rules.frameFaceWidthMm : rules.mullionFaceWidthMm / 2;
+  return {
+    x: area.x + left,
+    y: area.y + top,
+    width: Math.max(100, area.width - left - right),
+    height: Math.max(100, area.height - top - bottom)
+  };
+}
+
+function insetRect(area: { x: number; y: number; width: number; height: number }, inset: number) {
+  return {
+    x: area.x + inset,
+    y: area.y + inset,
+    width: Math.max(80, area.width - inset * 2),
+    height: Math.max(80, area.height - inset * 2)
+  };
+}
+
 function normalizeDrawingModelGeometry(model: WindowUnitDto["drawingModel"], widthMm: number, heightMm: number, openType: WindowForm["openType"]): WindowUnitDto["drawingModel"] {
   const base = cloneDrawingModel({
     ...model,
     outerFrame: model.outerFrame ?? { width: widthMm, height: heightMm, profileCode: "ALU-70-FRAME" },
-    openType
+    openType,
+    sashes: model.sashes ?? []
   });
   if (hasValidPanelCoverage(base.glassPanels, widthMm, heightMm)) return base;
   return {
@@ -1287,9 +1407,11 @@ function buildFreeModelFromForm(form: WindowForm): WindowUnitDto["drawingModel"]
       quantity: 1
     }))
   );
+  const sashes = form.openType === "fixed" ? [] : inferDefaultSashes(glassPanels, form.openType);
   return {
     outerFrame: { width: form.widthMm, height: form.heightMm, profileCode: "ALU-70-FRAME" },
     mullions,
+    sashes,
     glassPanels,
     openType: form.openType
   };
@@ -1300,9 +1422,70 @@ function cloneDrawingModel(model: WindowUnitDto["drawingModel"]): WindowUnitDto[
     ...model,
     outerFrame: model.outerFrame ? { ...model.outerFrame } : undefined,
     mullions: model.mullions.map((mullion) => ({ ...mullion })),
+    sashes: (model.sashes ?? []).map((sash) => ({ ...sash, area: { ...sash.area } })),
     glassPanels: model.glassPanels.map((panel) => ({ ...panel })),
     dimensionRules: model.dimensionRules ? { ...model.dimensionRules } : undefined
   };
+}
+
+function panelToRect(panel: WindowUnitDto["drawingModel"]["glassPanels"][number]) {
+  return { x: panel.x ?? 0, y: panel.y ?? 0, width: panel.width, height: panel.height };
+}
+
+function sameRect(a: { x: number; y: number; width: number; height: number }, b: { x: number; y: number; width: number; height: number }) {
+  return Math.abs(a.x - b.x) <= 2 && Math.abs(a.y - b.y) <= 2 && Math.abs(a.width - b.width) <= 2 && Math.abs(a.height - b.height) <= 2;
+}
+
+function findSashForPanel(sashes: NonNullable<WindowUnitDto["drawingModel"]["sashes"]>, panel: WindowUnitDto["drawingModel"]["glassPanels"][number]) {
+  return sashes.find((sash) => sameRect(sash.area, panelToRect(panel)));
+}
+
+function keepSashesCoveredByPanels(sashes: NonNullable<WindowUnitDto["drawingModel"]["sashes"]>, panels: WindowUnitDto["drawingModel"]["glassPanels"]) {
+  return sashes.filter((sash) => panels.some((panel) => sameRect(sash.area, panelToRect(panel))));
+}
+
+function remapSashesToPanels(
+  sashes: NonNullable<WindowUnitDto["drawingModel"]["sashes"]>,
+  oldPanels: WindowUnitDto["drawingModel"]["glassPanels"],
+  nextPanels: WindowUnitDto["drawingModel"]["glassPanels"]
+) {
+  return sashes.flatMap((sash) => {
+    const oldPanel = oldPanels.find((panel) => sameRect(sash.area, panelToRect(panel)));
+    const nextPanel = oldPanel ? nextPanels.find((panel) => panel.id === oldPanel.id) : undefined;
+    return nextPanel ? [{ ...sash, area: panelToRect(nextPanel) }] : [];
+  });
+}
+
+function inferDefaultSashes(glassPanels: WindowUnitDto["drawingModel"]["glassPanels"], openType: WindowForm["openType"]) {
+  if (openType === "fixed" || !glassPanels.length) return [];
+  const target = glassPanels
+    .slice()
+    .sort((a, b) => b.width * b.height - a.width * a.height || (b.x ?? 0) - (a.x ?? 0))[0];
+  return [{
+    id: "sash-default",
+    type: openType,
+    openDirection: openType === "top-hung" ? "top" as const : openType === "bottom-hung" ? "bottom" as const : openType === "sliding" ? "slide-right" as const : "right" as const,
+    area: panelToRect(target)
+  }];
+}
+
+function openTypeLabel(type: WindowForm["openType"]) {
+  return type === "casement" ? "平开" : type === "sliding" ? "推拉" : type === "top-hung" ? "上悬" : type === "bottom-hung" ? "下悬" : "固定";
+}
+
+function openDirectionLabel(direction?: NonNullable<WindowUnitDto["drawingModel"]["sashes"]>[number]["openDirection"]) {
+  if (direction === "left") return "左开";
+  if (direction === "right") return "右开";
+  if (direction === "top") return "上悬";
+  if (direction === "bottom") return "下悬";
+  if (direction === "slide-left") return "向左推拉";
+  if (direction === "slide-right") return "向右推拉";
+  return "未设方向";
+}
+
+function sashLabel(sash: NonNullable<WindowUnitDto["drawingModel"]["sashes"]>[number]) {
+  if (sash.type === "fixed") return "固定窗扇";
+  return `${openTypeLabel(sash.type)}窗扇 · ${openDirectionLabel(sash.openDirection)}`;
 }
 
 function sortPanels<T extends { x?: number; y?: number }>(panels: T[]) {
@@ -1399,6 +1582,74 @@ function movePanelsWithMullion(
   return next;
 }
 
+function OpeningMark({
+  x,
+  y,
+  width,
+  height,
+  type,
+  direction
+}: {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  type: WindowForm["openType"];
+  direction?: NonNullable<WindowUnitDto["drawingModel"]["sashes"]>[number]["openDirection"];
+}) {
+  const color = "#2563eb";
+  if (type === "fixed") return null;
+
+  if (type === "sliding") {
+    const arrowY = y + height * 0.52;
+    const left = direction === "slide-left";
+    return (
+      <g className="opening-mark" pointerEvents="none">
+        <line x1={x + width * 0.25} y1={arrowY} x2={x + width * 0.75} y2={arrowY} stroke={color} strokeWidth="3" />
+        <polyline
+          points={
+            left
+              ? `${x + width * 0.25 + 12},${arrowY - 8} ${x + width * 0.25},${arrowY} ${x + width * 0.25 + 12},${arrowY + 8}`
+              : `${x + width * 0.75 - 12},${arrowY - 8} ${x + width * 0.75},${arrowY} ${x + width * 0.75 - 12},${arrowY + 8}`
+          }
+          fill="none"
+          stroke={color}
+          strokeWidth="3"
+        />
+      </g>
+    );
+  }
+  if (type === "top-hung" || type === "bottom-hung") {
+    const top = type === "top-hung";
+    const arrowY = top ? y + 8 : y + height - 8;
+    const endY = top ? y + height * 0.72 : y + height * 0.28;
+    return (
+      <g className="opening-mark" pointerEvents="none">
+        <line x1={x + width * 0.5} y1={arrowY} x2={x + width * 0.5} y2={endY} stroke={color} strokeWidth="3" />
+        <polyline
+          points={
+            top
+              ? `${x + width * 0.5 - 8},${arrowY + 10} ${x + width * 0.5},${arrowY} ${x + width * 0.5 + 8},${arrowY + 10}`
+              : `${x + width * 0.5 - 8},${arrowY - 10} ${x + width * 0.5},${arrowY} ${x + width * 0.5 + 8},${arrowY - 10}`
+          }
+          fill="none"
+          stroke={color}
+          strokeWidth="3"
+        />
+      </g>
+    );
+  }
+  const hingeX = direction === "left" ? x : x + width;
+  const handleX = direction === "left" ? x + width : x;
+  return (
+    <g className="opening-mark" pointerEvents="none">
+      <line x1={hingeX} y1={y} x2={handleX} y2={y + height / 2} stroke={color} strokeWidth="3" />
+      <line x1={hingeX} y1={y + height} x2={handleX} y2={y + height / 2} stroke={color} strokeWidth="3" />
+      <circle cx={handleX} cy={y + height / 2} r="4" fill={color} />
+    </g>
+  );
+}
+
 function WindowCanvas({
   windowUnit,
   draft,
@@ -1409,7 +1660,8 @@ function WindowCanvas({
   onMoveMullion,
   onBeginFreeMullionDrag,
   onMoveFreeMullion,
-  onFinishFreeMullionDrag
+  onFinishFreeMullionDrag,
+  dimensionRules
 }: {
   windowUnit?: WindowUnitDto;
   draft: WindowForm;
@@ -1421,6 +1673,7 @@ function WindowCanvas({
   onBeginFreeMullionDrag: () => void;
   onMoveFreeMullion: (id: string, positionMm: number) => void;
   onFinishFreeMullionDrag: () => void;
+  dimensionRules: DimensionRulesDto;
 }) {
   const width = draft.widthMm;
   const height = draft.heightMm;
@@ -1435,7 +1688,10 @@ function WindowCanvas({
   const h = height * scale;
   const x = (viewW - w) / 2;
   const y = 56;
-  const frame = Math.max(18, 48 * scale);
+  const rules = coerceDimensionRules(draft.drawingModel?.dimensionRules ?? dimensionRules);
+  const frameProfile = Math.max(8, rules.frameFaceWidthMm * scale);
+  const mullionProfile = Math.max(8, rules.mullionFaceWidthMm * scale);
+  const sashProfile = Math.max(7, rules.sashFaceWidthMm * scale);
   const svgRef = useRef<SVGSVGElement | null>(null);
   const [dragging, setDragging] = useState<{ direction: "vertical" | "horizontal"; index: number } | null>(null);
   const [draggingFree, setDraggingFree] = useState<{ id: string; direction: "vertical" | "horizontal" } | null>(null);
@@ -1479,16 +1735,23 @@ function WindowCanvas({
         </linearGradient>
       </defs>
       <rect width={viewW} height={viewH} rx="8" fill="#f8fafc" />
-      <rect x={x} y={y} width={w} height={h} rx="3" fill="#8a6a52" />
+      <rect x={x} y={y} width={w} height={h} rx="3" fill="#f8fbfc" />
       {draft.drawingModel?.glassPanels.length ? (
         draft.drawingModel.glassPanels.map((panel) => {
-          const panelX = x + (panel.x ?? 0) * scale + 3;
-          const panelY = y + (panel.y ?? 0) * scale + 3;
-          const panelW = Math.max(4, panel.width * scale - 6);
-          const panelH = Math.max(4, panel.height * scale - 6);
+          const sash = findSashForPanel(draft.drawingModel?.sashes ?? [], panel);
+          const clear = panelClearOpeningForCanvas(panelToRect(panel), width, height, rules);
+          const glassRect = sash ? insetRect(clear, rules.sashFaceWidthMm + rules.glassInstallGapMm) : insetRect(clear, rules.glassInstallGapMm);
+          const panelX = x + glassRect.x * scale;
+          const panelY = y + glassRect.y * scale;
+          const panelW = Math.max(4, glassRect.width * scale);
+          const panelH = Math.max(4, glassRect.height * scale);
+          const sashX = x + clear.x * scale;
+          const sashY = y + clear.y * scale;
+          const sashW = Math.max(4, clear.width * scale);
+          const sashH = Math.max(4, clear.height * scale);
           const showLabel = panelW > 76 && panelH > 34;
           return (
-            <g key={panel.id} className="glass-panel-group">
+            <g key={panel.id} className={sash ? "glass-panel-group sash-panel-group" : "glass-panel-group"}>
               <rect
                 className="glass-panel"
                 x={panelX}
@@ -1503,16 +1766,32 @@ function WindowCanvas({
                   onSelectGlass(panel.id);
                 }}
               />
+              {sash && (
+                <>
+                  <rect
+                    className="sash-frame"
+                    x={sashX}
+                    y={sashY}
+                    width={sashW}
+                    height={sashH}
+                    fill="none"
+                    stroke={selectedGlassId === panel.id ? "#2563eb" : "#5f4533"}
+                    strokeWidth={sashProfile}
+                    pointerEvents="none"
+                  />
+                  <OpeningMark x={panelX} y={panelY} width={panelW} height={panelH} type={sash.type} direction={sash.openDirection} />
+                </>
+              )}
               {showLabel && (
                 <text x={panelX + panelW / 2} y={panelY + panelH / 2 + 4} textAnchor="middle" fontSize="12" fontWeight="700" fill="#23545c" pointerEvents="none">
-                  {Math.round(panel.width)}x{Math.round(panel.height)}
+                  {sash ? "窗扇 " : ""}{Math.round(panel.width)}x{Math.round(panel.height)}
                 </text>
               )}
             </g>
           );
         })
       ) : (
-        <rect x={x + frame} y={y + frame} width={w - frame * 2} height={h - frame * 2} fill="url(#glass)" stroke="#9fcbd3" strokeWidth="2" />
+        <rect x={x + frameProfile} y={y + frameProfile} width={w - frameProfile * 2} height={h - frameProfile * 2} fill="url(#glass)" stroke="#9fcbd3" strokeWidth="2" />
       )}
       {customMullions
         ? customMullions.map((mullion) =>
@@ -1520,9 +1799,9 @@ function WindowCanvas({
               <g key={mullion.id} className="mullion-free-group">
                 <rect
                   className="mullion-free"
-                  x={x + (mullion.x ?? 0) * scale - 10}
+                  x={x + (mullion.x ?? 0) * scale - mullionProfile / 2}
                   y={y + (mullion.fromY ?? 0) * scale}
-                  width="20"
+                  width={mullionProfile}
                   height={((mullion.toY ?? height) - (mullion.fromY ?? 0)) * scale}
                   fill={selectedMullionId === mullion.id ? "#3370ff" : "#765841"}
                   pointerEvents="none"
@@ -1549,9 +1828,9 @@ function WindowCanvas({
                 <rect
                   className="mullion-free"
                   x={x + (mullion.fromX ?? 0) * scale}
-                  y={y + (mullion.y ?? 0) * scale - 10}
+                  y={y + (mullion.y ?? 0) * scale - mullionProfile / 2}
                   width={((mullion.toX ?? width) - (mullion.fromX ?? 0)) * scale}
-                  height="20"
+                  height={mullionProfile}
                   fill={selectedMullionId === mullion.id ? "#3370ff" : "#765841"}
                   pointerEvents="none"
                 />
@@ -1576,7 +1855,7 @@ function WindowCanvas({
           )
         : verticals.map((mm, index) => (
             <g key={`v-${index}`} className="mullion-handle" onPointerDown={(event) => { event.currentTarget.setPointerCapture(event.pointerId); setDragging({ direction: "vertical", index }); }}>
-              <rect x={x + mm * scale - 10} y={y + frame} width="20" height={h - frame * 2} fill="#765841" />
+              <rect x={x + mm * scale - mullionProfile / 2} y={y + frameProfile / 2} width={mullionProfile} height={h - frameProfile} fill="#765841" />
               <circle cx={x + mm * scale} cy={y + h / 2} r="17" fill="#3370ff" />
               <text x={x + mm * scale} y={y + h / 2 + 5} textAnchor="middle" fontSize="11" fill="#fff">{Math.round(mm)}</text>
             </g>
@@ -1584,12 +1863,12 @@ function WindowCanvas({
       {!customMullions &&
         horizontals.map((mm, index) => (
           <g key={`h-${index}`} className="mullion-handle" onPointerDown={(event) => { event.currentTarget.setPointerCapture(event.pointerId); setDragging({ direction: "horizontal", index }); }}>
-            <rect x={x + frame} y={y + mm * scale - 10} width={w - frame * 2} height="20" fill="#765841" />
+            <rect x={x + frameProfile / 2} y={y + mm * scale - mullionProfile / 2} width={w - frameProfile} height={mullionProfile} fill="#765841" />
             <circle cx={x + w / 2} cy={y + mm * scale} r="17" fill="#3370ff" />
             <text x={x + w / 2} y={y + mm * scale + 5} textAnchor="middle" fontSize="11" fill="#fff">{Math.round(mm)}</text>
           </g>
         ))}
-      <rect x={x} y={y} width={w} height={h} fill="none" stroke="#5f4533" strokeWidth="6" />
+      <rect x={x} y={y} width={w} height={h} fill="none" stroke="#5f4533" strokeWidth={frameProfile} />
       <line x1={x} y1={y + h + 30} x2={x + w} y2={y + h + 30} stroke="#2b3038" strokeWidth="2" />
       <text x={x + w / 2} y={y + h + 54} textAnchor="middle" fontSize="16" fontWeight="700">{width}mm</text>
       <line x1={x - 34} y1={y} x2={x - 34} y2={y + h} stroke="#2b3038" strokeWidth="2" />

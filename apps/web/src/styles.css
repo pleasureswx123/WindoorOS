@@ -302,6 +302,17 @@ label {
   color: var(--ink-mute);
   font-size: 12px;
 }
+.selection-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  margin-top: 8px;
+}
+.selection-actions button {
+  min-height: 30px;
+  padding: 6px 8px;
+  font-size: 12px;
+}
 .detail-strip {
   display: grid;
   grid-template-columns: 1.4fr 160px 160px;
@@ -340,6 +351,15 @@ label {
 }
 .glass-panel:hover {
   stroke: var(--blue);
+}
+.sash-panel-group .glass-panel {
+  fill: #eefcff;
+}
+.sash-frame {
+  filter: drop-shadow(0 1px 1px rgba(31, 35, 41, .16));
+}
+.opening-mark {
+  opacity: .9;
 }
 .mullion-free-group:hover .mullion-free {
   fill: var(--blue);
