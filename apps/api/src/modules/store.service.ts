@@ -497,7 +497,7 @@ export class StoreService implements OnModuleInit {
     const setting = await this.prisma.appSetting.findUnique({
       where: { tenantId_key: { tenantId: TENANT_ID, key: MATERIAL_SETTINGS_KEY } }
     });
-    return (setting?.value as unknown as MaterialSettings | undefined) ?? defaultMaterialSettings;
+    return normalizeMaterialSettings((setting?.value as Partial<MaterialSettings> | undefined) ?? defaultMaterialSettings);
   }
 
   async updateMaterialSettings(dto: MaterialSettingsDto) {
@@ -890,4 +890,46 @@ export class StoreService implements OnModuleInit {
 </body>
 </html>`;
   }
+}
+
+function normalizeMaterialSettings(value: Partial<MaterialSettings>): MaterialSettings {
+  const stockLengthsMm = normalizeNumberList(value.stockLengthsMm, defaultMaterialSettings.stockLengthsMm, 1000, 12000);
+  const legacyGlassSpec = {
+    widthMm: value.glassSheetWidthMm ?? defaultMaterialSettings.glassSheetWidthMm,
+    heightMm: value.glassSheetHeightMm ?? defaultMaterialSettings.glassSheetHeightMm
+  };
+  const glassSheetSpecs = normalizeGlassSheetSpecs(value.glassSheetSpecs?.length ? value.glassSheetSpecs : [legacyGlassSpec]);
+  const firstGlassSpec = glassSheetSpecs[0] ?? defaultMaterialSettings.glassSheetSpecs[0];
+  return {
+    stockLengthsMm,
+    glassSheetSpecs,
+    kerfMm: normalizeNumber(value.kerfMm, defaultMaterialSettings.kerfMm),
+    profilePricePerMeter: normalizeNumber(value.profilePricePerMeter, defaultMaterialSettings.profilePricePerMeter),
+    glassSheetWidthMm: firstGlassSpec.widthMm,
+    glassSheetHeightMm: firstGlassSpec.heightMm,
+    glassPricePerSqm: normalizeNumber(value.glassPricePerSqm, defaultMaterialSettings.glassPricePerSqm),
+    hardwarePricePerWindow: normalizeNumber(value.hardwarePricePerWindow, defaultMaterialSettings.hardwarePricePerWindow),
+    laborPricePerSqm: normalizeNumber(value.laborPricePerSqm, defaultMaterialSettings.laborPricePerSqm),
+    profitRate: normalizeNumber(value.profitRate, defaultMaterialSettings.profitRate)
+  };
+}
+
+function normalizeNumber(value: number | undefined, fallback: number) {
+  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
+
+function normalizeNumberList(values: number[] | undefined, fallback: number[], min: number, max: number) {
+  const next = (values ?? [])
+    .filter((value) => typeof value === "number" && Number.isFinite(value))
+    .map((value) => Math.round(value))
+    .filter((value) => value >= min && value <= max);
+  return [...new Set(next.length ? next : fallback)].sort((a, b) => a - b);
+}
+
+function normalizeGlassSheetSpecs(specs: Array<{ widthMm: number; heightMm: number }> | undefined) {
+  const next = (specs ?? [])
+    .filter((spec) => typeof spec.widthMm === "number" && typeof spec.heightMm === "number")
+    .map((spec) => ({ widthMm: Math.round(spec.widthMm), heightMm: Math.round(spec.heightMm) }))
+    .filter((spec) => spec.widthMm >= 500 && spec.heightMm >= 500 && spec.widthMm <= 6000 && spec.heightMm <= 6000);
+  return next.length ? next : defaultMaterialSettings.glassSheetSpecs;
 }

@@ -4,7 +4,10 @@
   "private": true,
   "packageManager": "pnpm@9.15.4",
   "scripts": {
+    "infra:up": "docker compose -f infra/compose.yaml up -d",
+    "infra:down": "docker compose -f infra/compose.yaml down",
     "dev": "pnpm --parallel --filter @windooros/api --filter @windooros/web dev",
+    "dev:full": "pnpm infra:up && pnpm dev",
     "build": "pnpm -r build",
     "test": "pnpm -r test",
     "typecheck": "pnpm -r typecheck",
